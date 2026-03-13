@@ -56,8 +56,8 @@ class PipelineConfig:
     skip_embeddings: bool = False
     skip_vector_store: bool = True  # default True until FAISS adapter is ready
 
-    chunk_size: int = 512
-    chunk_overlap: int = 50
+    chunk_size: int = 200  # Reduced chunk size for smaller documents
+    chunk_overlap: int = 20  # Reduced overlap for better chunking
 
     embedding_model: str = "all-MiniLM-L6-v2"
     tfidf_max_features: int = 5000

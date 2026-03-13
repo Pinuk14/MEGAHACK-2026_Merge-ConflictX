@@ -115,7 +115,10 @@ class TextChunker:
         # Find all sentence endings in range
         endings = list(self.SENTENCE_ENDINGS.finditer(search_text))
         
+        logger.debug(f"Sentence endings found: {endings}")
+
         if not endings:
+            logger.debug("No sentence boundaries found. Using target position.")
             return target_pos
         
         # Find ending closest to target
@@ -124,6 +127,8 @@ class TextChunker:
             endings,
             key=lambda m: abs(m.end() - relative_target)
         )
+        
+        logger.debug(f"Best sentence ending: {best_ending}")
         
         return start_search + best_ending.end()
     
@@ -151,7 +156,13 @@ class TextChunker:
         if remaining:
             paragraphs.append((remaining, current_pos))
         
-        return paragraphs if paragraphs else [(text, 0)]
+        if not paragraphs:
+            logger.debug("No paragraph breaks found. Treating entire text as a single paragraph.")
+            return [(text, 0)]
+        
+        logger.debug(f"Paragraphs found: {len(paragraphs)}")
+        
+        return paragraphs
     
     def chunk_text(
         self,
@@ -174,21 +185,23 @@ class TextChunker:
         Returns:
             List of Chunk objects
         """
-        if not text or len(text) < self.config.min_chunk_size:
-            # Return single chunk for small documents
-            if text:
-                return [Chunk(
-                    text=text,
-                    chunk_index=0,
-                    start_char=0,
-                    end_char=len(text),
-                    document_id=document_id,
-                    document_title=document_title,
-                    source=source,
-                    metadata=extra_metadata or {}
-                )]
+        if not text:
+            logger.warning(f"Document '{record.get('title', 'Untitled')}' has no content to chunk.")
             return []
-        
+
+        if len(text) < self.config.min_chunk_size:
+            logger.info(f"Document '{document_title}' is smaller than min_chunk_size. Creating a single chunk.")
+            return [Chunk(
+                text=text,
+                chunk_index=0,
+                start_char=0,
+                end_char=len(text),
+                document_id=document_id,
+                document_title=document_title,
+                source=source,
+                metadata=extra_metadata or {}
+            )]
+
         chunks = []
         current_pos = 0
         chunk_index = 0
@@ -211,6 +224,8 @@ class TextChunker:
             # Extract chunk text
             chunk_text = text[current_pos:end_pos].strip()
             
+            logger.debug(f"Current position: {current_pos}, End position: {end_pos}")
+            
             # Only add if meets minimum size
             if len(chunk_text) >= self.config.min_chunk_size or end_pos >= len(text):
                 chunks.append(Chunk(
@@ -232,30 +247,34 @@ class TextChunker:
             if current_pos <= chunks[-1].start_char if chunks else 0:
                 current_pos = end_pos
         
+        logger.info(f"Created {len(chunks)} chunks for document '{document_title}'")
+        
         return chunks
     
     def chunk_document(self, record: Dict[str, Any]) -> List[Chunk]:
         """
         Chunk a document record.
-        
+
         Args:
-            record: Document record with Original_content
-            
+            record: Document record with content and metadata
+
         Returns:
             List of Chunk objects
         """
-        text = record.get("Original_content", "")
-        
-        # Create document ID from title and source
-        doc_id = f"{record.get('source', 'unknown')}_{record.get('title', 'untitled')}"
-        
+        text = record.get("content", "")
+
+        # Create document ID from id and title
+        doc_id = str(record.get("id", "unknown"))
+
         # Extract relevant metadata
         extra_metadata = {
-            "Published_date": record.get("Published_date"),
-            "Type": record.get("Metadata", {}).get("Type"),
-            "Accuracy": record.get("Metadata", {}).get("Accuracy")
+            "char_count": record.get("metadata", {}).get("char_count"),
+            "file_path": record.get("metadata", {}).get("file_path")
         }
-        
+
+        logger.debug(f"Chunking document: {record.get('title', 'Untitled')} with content size: {len(text)}")
+        logger.debug(f"Chunking configuration: {self.config}")
+
         return self.chunk_text(
             text=text,
             document_id=doc_id,

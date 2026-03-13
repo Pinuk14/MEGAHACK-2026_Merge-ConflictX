@@ -1,0 +1,8 @@
+This is a dummy text document created for testing purposes.
+
+It contains multiple lines of text to simulate a real document.
+
+Line 1: The quick brown fox jumps over the lazy dog.
+Line 2: Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+Line 3: Python is a versatile programming language.
+Line 4: This is the final line of the dummy document.

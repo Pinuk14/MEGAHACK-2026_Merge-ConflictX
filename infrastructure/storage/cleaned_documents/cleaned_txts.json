@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "source": "txt",
+    "title": "dummy_document",
+    "content": "this is a dummy text document created for testing purposes. it contains multiple lines of text to simulate a real document. line 1: the quick brown fox jumps over the lazy dog. line 2: lorem ipsum dolor sit amet, consectetur adipiscing elit. line 3: python is a versatile programming language. line 4: this is the final line of the dummy document.",
+    "metadata": {
+      "char_count": 347,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\dummy_document.txt"
+    }
+  },
+  {
+    "id": 2,
+    "source": "txt",
+    "title": "large_dummy_document",
+    "content": "this is a large dummy text document created for testing purposes. it contains multiple paragraphs of text to simulate a real-world document with sufficient content for chunking. paragraph 1: the quick brown fox jumps over the lazy dog. lorem ipsum dolor sit amet, consectetur adipiscing elit. integer nec odio. praesent libero. sed cursus ante dapibus diam. sed nisi. nulla quis sem at nibh elementum imperdiet. duis sagittis ipsum. praesent mauris. fusce nec tellus sed augue semper porta. mauris massa. paragraph 2: vestibulum lacinia arcu eget nulla. class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. curabitur sodales ligula in libero. sed dignissim lacinia nunc. curabitur tortor. pellentesque nibh. aenean quam. in scelerisque sem at dolor. maecenas mattis. sed convallis tristique sem. proin ut ligula vel nunc egestas porttitor. morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. paragraph 3: fusce ac turpis quis ligula lacinia aliquet. mauris ipsum. nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. quisque volutpat condimentum velit. class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. nam nec ante. sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis. nulla facilisi. ut fringilla. suspendisse potenti. nunc feugiat mi a tellus consequat imperdiet. vestibulum sapien. proin quam. etiam ultrices. paragraph 4: suspendisse in justo eu magna luctus suscipit. sed lectus. integer euismod lacus luctus magna. quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam. vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; morbi lacinia molestie dui. praesent blandit dolor. sed non quam. in vel mi sit amet augue congue elementum. morbi in ipsum sit amet pede facilisis laoreet. donec lacus nunc, viverra nec, blandit vel, egestas et, augue. vestibulum tincidunt malesuada tellus. ut ultrices ultrices enim. curabitur sit amet mauris. paragraph 5: morbi in dui quis est pulvinar ullamcorper. nulla facilisi. integer lacinia sollicitudin massa. cras metus. sed aliquet risus a tortor. integer id quam. morbi mi. quisque nisl felis, venenatis tristique, dignissim in, ultrices sit amet, augue. proin sodales libero eget ante. nulla quam. aenean laoreet. vestibulum nisi lectus, commodo ac, facilisis ac, ultricies eu, pede. ut orci risus, accumsan porttitor, cursus quis, aliquet eget, justo. sed pretium blandit orci. ut eu diam at pede suscipit sodales.",
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  }
+]
