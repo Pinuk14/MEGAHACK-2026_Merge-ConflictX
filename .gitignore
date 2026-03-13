@@ -75,7 +75,7 @@ storage/raw_documents/
 storage/cleaned_documents/
 storage/embeddings/
 storage/outputs/
-
+infrastructure/
 # ML datasets
 
 ml/datasets/raw/

@@ -13,6 +13,11 @@
     #analysisSummary { margin-top: 8px; }
     #analysisStatus { color: #888; margin-top: 6px; }
     #analysisError { color: red; margin-top: 6px; }
+    #copilotSettings { margin-top: 12px; border: 1px solid #eee; border-radius: 8px; padding: 10px; }
+    .row { display: flex; gap: 6px; margin-top: 6px; }
+    .row input { flex: 1; padding: 6px; }
+    .small { font-size: 12px; color: #666; margin-top: 4px; }
+    .toggleRow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
     #controls { display: flex; gap: 6px; margin-top: 8px; }
     #prompt { flex: 1; padding: 6px; }
     #sendBtn { padding: 6px 12px; }
@@ -33,6 +38,35 @@
     <div id="analysisStatus"></div>
     <div id="analysisSummary"></div>
     <div id="analysisError"></div>
+  </div>
+
+  <div id="copilotSettings">
+    <h3>Copilot Memory</h3>
+    <div class="toggleRow">
+      <label><input id="assistModeToggle" type="checkbox" /> Assist mode</label>
+      <label><input id="autofillToggle" type="checkbox" /> Auto-fill forms</label>
+      <label><input id="continuousLoopToggle" type="checkbox" /> Continuous loop</label>
+    </div>
+    <div class="row">
+      <input id="profileName" type="text" placeholder="Name" />
+      <input id="profileEmail" type="email" placeholder="Email" />
+    </div>
+    <div class="row">
+      <input id="profilePhone" type="text" placeholder="Phone" />
+      <input id="profileAddress" type="text" placeholder="Address" />
+    </div>
+    <button id="saveProfileBtn">Save Profile</button>
+
+    <div class="small" id="domainLabel">Current site: unknown</div>
+    <div class="row">
+      <input id="siteUsername" type="text" placeholder="Site username" />
+      <input id="siteEmail" type="email" placeholder="Site email" />
+    </div>
+    <div class="row">
+      <input id="sitePassword" type="password" placeholder="Site password" />
+      <button id="saveSiteCredsBtn">Save Site Login</button>
+    </div>
+    <div class="small" id="copilotStatus"></div>
   </div>
 
   <hr />
