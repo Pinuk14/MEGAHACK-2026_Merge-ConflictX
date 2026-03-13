@@ -557,13 +557,13 @@ export default function FormulaAI() {
   const [raceTime, setRaceTime] = useState(0);
   const [inputText, setInputText] = useState("");
   const [inputError, setInputError] = useState("");
-  const [fileInfo, setFileInfo] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
   const [sessionTime, setSessionTime] = useState("00:00:00.000");
   const [verdictCountdown, setVerdictCountdown] = useState(5);
 
   // ─── API STATE ────────────────────────────────────────────────────────────
   const [jobId, setJobId] = useState(null);
-  const [fileId, setFileId] = useState(null);
+  const [fileIds, setFileIds] = useState([]);
   const [apiSteps, setApiSteps] = useState(STEPS);
   const [panelData, setPanelData] = useState({
     stats: null,
@@ -579,6 +579,7 @@ export default function FormulaAI() {
   const [panelDataLoaded, setPanelDataLoaded] = useState(false);
   const [panelDataError, setPanelDataError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [expandedDetail, setExpandedDetail] = useState(null);
 
   const animRef = useRef(null);
   const runRef = useRef(null);
@@ -602,32 +603,51 @@ export default function FormulaAI() {
 
   // ─── API FUNCTIONS ───────────────────────────────────────────────────────────
 
-  const uploadFile = async (file) => {
+  const uploadFiles = async (files) => {
+    if (!files?.length) return [];
     setIsUploading(true);
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(`${API_BASE}/upload`, {
+      files.forEach((file) => formData.append("files", file));
+      const endpoint = files.length > 1 ? "/upload-multiple" : "/upload";
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         body: formData,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        let detail = "Upload failed";
+        try {
+          const err = await res.json();
+          detail = err?.detail || detail;
+        } catch {
+          // ignore parse failures
+        }
+        throw new Error(detail);
+      }
       const data = await res.json();
-      setFileId(data.file_id);
-      setFileInfo({ name: data.filename, size: data.size_bytes });
+      const uploaded = Array.isArray(data.files) ? data.files : [data];
+      setUploadedFiles(
+        uploaded.map((f) => ({ name: f.filename, size: f.size_bytes })),
+      );
+      setFileIds(uploaded.map((f) => f.file_id));
       setInputError("");
-      return data.file_id;
+      return uploaded.map((f) => f.file_id);
     } catch (err) {
       setInputError("File upload failed: " + err.message);
-      return null;
+      return [];
     } finally {
       setIsUploading(false);
     }
   };
 
-  const runJobOnAPI = async ({ text, fileId: fileIdForRun }) => {
+  const runJobOnAPI = async ({ text, fileIds: fileIdsForRun }) => {
     try {
-      const body = fileIdForRun ? { file_id: fileIdForRun } : { text };
+      let body = { text };
+      if (fileIdsForRun?.length === 1) {
+        body = { file_id: fileIdsForRun[0] };
+      } else if (fileIdsForRun?.length > 1) {
+        body = { file_ids: fileIdsForRun };
+      }
 
       const res = await fetch(`${API_BASE}/run`, {
         method: "POST",
@@ -676,6 +696,11 @@ export default function FormulaAI() {
             i === idx
               ? {
                   ...s,
+                  label: data.label || s.label,
+                  desc: data.desc || s.desc,
+                  sector: data.sector || s.sector,
+                  short: data.short || s.short,
+                  color: data.color || s.color,
                   progress: pct,
                   currentMetrics: data.metrics || s.metrics,
                 }
@@ -912,10 +937,11 @@ export default function FormulaAI() {
     setNewId(null);
     setRaceTime(0);
     setInputText("");
-    setFileInfo(null);
+    setUploadedFiles([]);
     setInputError("");
     setJobId(null);
-    setFileId(null);
+    setFileIds([]);
+    setApiSteps(STEPS);
     setPanelData({
       stats: null,
       structure: null,
@@ -946,11 +972,13 @@ export default function FormulaAI() {
 
   const handleRun = async () => {
     const trimmedInput = inputText.trim();
-    const isFilePlaceholder = /^\[File:\s*.+\]$/i.test(trimmedInput);
+    const isFilePlaceholder =
+      /^\[Files?:\s*\d+\]$/i.test(trimmedInput) ||
+      /^\[Files?:\s*\d+\]\s+/i.test(trimmedInput);
     const hasTypedText = !!trimmedInput && !isFilePlaceholder;
-    const useFileSource = !!fileInfo && !hasTypedText;
+    const useFileSource = fileIds.length > 0 && !hasTypedText;
 
-    if (!trimmedInput && !fileInfo) {
+    if (!trimmedInput && fileIds.length === 0) {
       setInputError("Paste document text or upload a file first.");
       return;
     }
@@ -969,6 +997,7 @@ export default function FormulaAI() {
     setVerdictStep(null);
     setNewId(null);
     setRaceTime(0);
+    setApiSteps(STEPS);
     startRef.current = Date.now();
     timerRef.current = setInterval(
       () => setRaceTime(((Date.now() - startRef.current) / 1000).toFixed(1)),
@@ -978,7 +1007,7 @@ export default function FormulaAI() {
     // Use API instead of local simulation
     const jid = await runJobOnAPI({
       text: useFileSource ? null : trimmedInput,
-      fileId: useFileSource ? fileId : null,
+      fileIds: useFileSource ? fileIds : [],
     });
     if (jid) {
       setupSSE(jid);
@@ -988,8 +1017,9 @@ export default function FormulaAI() {
     }
   };
 
-  const step = STEPS[Math.min(curStep, STEPS.length - 1)];
+  const step = apiSteps[Math.min(curStep, apiSteps.length - 1)];
   const stepColor = step?.color || C.primary;
+  const liveMetrics = step?.currentMetrics || step?.metrics || [];
 
   // derived state for panels
   const doneClassify = doneIds.includes("classify");
@@ -1008,47 +1038,24 @@ export default function FormulaAI() {
       return { start: s, end: cursor };
     }) || [];
 
-  // topic data - use API or fallback
-  const topics = panelDataLoaded
-    ? (panelData.topics?.length
-        ? panelData.topics
-        : [{ label: "NO TOPIC DATA", pct: 0 }]
-      ).map((t) => ({
-        label: t.label,
-        pct: t.pct,
-        color: C.primary,
-      }))
-    : [{ label: "WAITING FOR ANALYSIS", pct: 0, color: C.primary }];
+  // topics from API only
+  const topics = (panelData.topics || []).map((t) => ({
+    label: t.label,
+    pct: t.pct,
+    color: C.primary,
+  }));
 
-  // clauses - use API or fallback
-  const clauses = panelDataLoaded
-    ? (panelData.clauses?.length
-        ? panelData.clauses
-        : [{ label: "NO CLAUSE DATA", val: "—", color: C.muted }]
-      ).map((c) => ({ ...c }))
-    : [{ label: "WAITING FOR ANALYSIS", val: "—", color: C.muted }];
+  // clauses from API only
+  const clauses = (panelData.clauses || []).map((c) => ({ ...c }));
 
-  // standings - use API or fallback
-  const standings = panelDataLoaded
-    ? (panelData.stakeholders?.length
-        ? panelData.stakeholders
-        : [{ label: "NO STAKEHOLDER DATA", score: 0, max_score: 10 }]
-      ).map((s, i) => ({
-        rank: String(i + 1).padStart(2, "0"),
-        label: s.label,
-        score: s.score,
-        max: s.max_score,
-        color: C.primary,
-      }))
-    : [
-        {
-          rank: "01",
-          label: "WAITING FOR ANALYSIS",
-          score: 0,
-          max: 10,
-          color: C.primary,
-        },
-      ];
+  // standings from API only
+  const standings = (panelData.stakeholders || []).map((s, i) => ({
+    rank: String(i + 1).padStart(2, "0"),
+    label: s.label,
+    score: s.score,
+    max: s.max_score,
+    color: C.primary,
+  }));
 
   // risk - use API or fallback
   const riskData =
@@ -1070,72 +1077,36 @@ export default function FormulaAI() {
   const riskCircumference = 2 * Math.PI * 45;
   const riskDash = (riskData.value / 10) * riskCircumference;
 
-  // insights - use API or fallback
-  const insights = panelDataLoaded
-    ? (panelData.insights?.length
-        ? panelData.insights
-        : [
-            {
-              id: "INSIGHT_EMPTY",
-              conf: "0%",
-              text:
-                panelDataError || "No insights were generated for this run.",
-              color: C.muted,
-            },
-          ]
-      ).map((i) => ({
-        id: i.id,
-        conf: i.conf,
-        text: i.text,
-        color: i.color,
-        shown: true,
-      }))
-    : [
-        {
-          id: "INSIGHT_WAIT",
-          conf: "0%",
-          text: "Waiting for backend analysis.",
-          color: C.muted,
-          shown: true,
-        },
-      ];
+  // insights from API only
+  const insights = (panelData.insights || []).map((i) => ({
+    id: i.id,
+    conf: i.conf,
+    text: i.text,
+    color: i.color,
+    shown: true,
+  }));
 
-  // radio comms - use API or fallback
-  const comms = panelDataLoaded
-    ? (panelData.radio?.length
-        ? panelData.radio
-        : [
-            {
-              type: "RX",
-              text: panelDataError || "No radio events available.",
-              color: C.muted,
-            },
-          ]
-      ).map((r) => ({
-        type: r.type,
-        text: r.text,
-        color: r.color,
-        shown: true,
-      }))
-    : [
-        {
-          type: "TX",
-          text: "Waiting for backend analysis.",
-          color: C.muted,
-          shown: true,
-        },
-      ];
+  // radio comms from API only
+  const comms = (panelData.radio || []).map((r) => ({
+    type: r.type,
+    text: r.text,
+    color: r.color,
+    shown: true,
+  }));
 
-  const recommendations = panelDataLoaded
-    ? panelData.recommendations?.length
-      ? panelData.recommendations
-      : [
-          {
-            priority: "INFO",
-            text: panelDataError || "No recommendations generated.",
-          },
-        ]
-    : [{ priority: "INFO", text: "Waiting for backend analysis." }];
+  const recommendations = panelData.recommendations || [];
+
+  const trimText = (value, maxLen = 220) => {
+    const text = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length <= maxLen) return text;
+    return `${text.slice(0, maxLen - 3)}...`;
+  };
+
+  const toggleExpandedDetail = (detail) => {
+    setExpandedDetail((prev) => (prev?.key === detail.key ? null : detail));
+  };
 
   const pipelineStatusNote = panelDataError
     ? panelDataError
@@ -1156,6 +1127,52 @@ export default function FormulaAI() {
       }
     : null;
 
+  const velocitySeriesRaw =
+    panelDataLoaded && Array.isArray(panelData.stats?.velocity_series)
+      ? panelData.stats.velocity_series
+      : [];
+
+  const velocitySeries =
+    velocitySeriesRaw.length >= 2
+      ? velocitySeriesRaw
+      : velocitySeriesRaw.length === 1
+        ? [{ t: velocitySeriesRaw[0].t, val: 0 }, velocitySeriesRaw[0]]
+        : [];
+
+  const sparkW = 100;
+  const sparkH = 40;
+  const hasVelocitySeries = velocitySeries.length >= 2;
+
+  let velocityLinePath = "";
+  let velocityAreaPath = "";
+  if (hasVelocitySeries) {
+    const minT = Math.min(...velocitySeries.map((p) => Number(p.t) || 0));
+    const maxT = Math.max(...velocitySeries.map((p) => Number(p.t) || 0));
+    const maxV = Math.max(1, ...velocitySeries.map((p) => Number(p.val) || 0));
+    const spanT = Math.max(1, maxT - minT);
+
+    const points = velocitySeries.map((p) => {
+      const x = ((Number(p.t) - minT) / spanT) * sparkW;
+      const y =
+        sparkH - (Math.max(0, Number(p.val) || 0) / maxV) * (sparkH - 3);
+      return {
+        x: Number.isFinite(x) ? x : 0,
+        y: Number.isFinite(y) ? y : sparkH,
+      };
+    });
+
+    velocityLinePath = points
+      .map(
+        (pt, idx) =>
+          `${idx === 0 ? "M" : "L"}${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`,
+      )
+      .join(" ");
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    velocityAreaPath = `${velocityLinePath} L${last.x.toFixed(2)} ${sparkH} L${first.x.toFixed(2)} ${sparkH} Z`;
+  }
+
   const structureData = panelDataLoaded
     ? {
         sections: panelData.structure?.sections ?? 0,
@@ -1164,6 +1181,12 @@ export default function FormulaAI() {
         tables: panelData.structure?.tables ?? 0,
       }
     : null;
+
+  const modelConfidenceValue = panelDataLoaded
+    ? Number(panelData.stats?.accuracy_pct ?? 0)
+    : phase === "running"
+      ? Math.round(trackProg * 1000) / 10
+      : null;
 
   return (
     <div
@@ -1458,8 +1481,8 @@ export default function FormulaAI() {
                   MODEL_CONFIDENCE
                 </span>
                 <span style={{ color: C.yellow, fontStyle: "italic" }}>
-                  {doneIds.length > 0
-                    ? `${(91 + doneIds.length * 0.5).toFixed(2)}%`
+                  {modelConfidenceValue != null
+                    ? `${modelConfidenceValue.toFixed(1)}%`
                     : "—"}
                 </span>
               </div>
@@ -1629,9 +1652,7 @@ export default function FormulaAI() {
                       setInputText(e.target.value);
                       setInputError("");
                     }}
-                    placeholder={
-                      "Paste document content here...\n\n— or click ⚡ Sample Doc —"
-                    }
+                    placeholder={"Paste document content here..."}
                     style={{ maxWidth: "500px", width: "100%" }}
                   />
                   {inputError && (
@@ -1665,22 +1686,23 @@ export default function FormulaAI() {
                       className="btn-ghost"
                       onClick={() => fileRef.current?.click()}
                     >
-                      📎 Upload PDF/TXT
+                      📎 Upload Files
                     </button>
                     <input
                       ref={fileRef}
                       type="file"
-                      accept=".pdf,.txt"
+                      accept=".pdf,.txt,.docx,.xml,.json,.png,.jpg,.jpeg,.bmp,.tiff,.webp,.wav"
+                      multiple
                       style={{ display: "none" }}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        uploadFile(f);
-                        setInputText(`[File: ${f.name}]`);
+                      onChange={async (e) => {
+                        const selected = Array.from(e.target.files || []);
+                        if (!selected.length) return;
+                        await uploadFiles(selected);
+                        setInputText(`[Files: ${selected.length}]`);
                       }}
                       disabled={isUploading}
                     />
-                    {fileInfo && (
+                    {uploadedFiles.length > 0 && (
                       <span
                         style={{
                           fontFamily: "monospace",
@@ -1688,20 +1710,9 @@ export default function FormulaAI() {
                           color: C.green,
                         }}
                       >
-                        ✓ {fileInfo.name}
+                        ✓ {uploadedFiles.length} file(s) selected
                       </span>
                     )}
-                    <button
-                      className="btn-ghost"
-                      onClick={() => {
-                        setInputText(
-                          "HEALTHCARE GOVERNANCE DIRECTIVE 2024/EU-H\n\nSection 4.2: All registered medical institutions must comply within 90 days. No grace period for SMEs.\n\nSection 9: Entities must demonstrate operational readiness as defined by the competent authority.\n\nFunding: €2.4B allocated — 88% urban, 12% rural.\n\nStakeholders: Providers, insurers, regulators, patients, pharma, SME operators.",
-                        );
-                        setInputError("");
-                      }}
-                    >
-                      ⚡ Sample Doc
-                    </button>
                   </div>
                   <div style={{ maxWidth: "340px", margin: "0 auto" }}>
                     <button className="btn-primary" onClick={handleRun}>
@@ -2299,8 +2310,9 @@ export default function FormulaAI() {
                     borderTop: `1px solid ${C.grid}`,
                   }}
                 >
-                  {step?.metrics.map((m, i) => {
-                    const shown = progress / 100 > i / step.metrics.length;
+                  {liveMetrics.map((m, i) => {
+                    const shown =
+                      progress / 100 > i / Math.max(liveMetrics.length, 1);
                     return (
                       <div
                         key={i}
@@ -2412,6 +2424,9 @@ export default function FormulaAI() {
                     display: "flex",
                     flexDirection: "column",
                     gap: "8px",
+                    maxHeight: "240px",
+                    overflowY: "auto",
+                    paddingRight: "4px",
                   }}
                 >
                   {clauses.map((cl, i) => (
@@ -2419,32 +2434,71 @@ export default function FormulaAI() {
                       key={i}
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        gap: "6px",
                         padding: "10px 12px",
                         background: "#000",
                         borderLeft: `3px solid ${cl.color}`,
+                        minHeight: "72px",
+                        maxHeight: "90px",
+                        overflow: "hidden",
                       }}
                     >
+                      <div
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            fontWeight: "700",
+                            textTransform: "uppercase",
+                            letterSpacing: "1px",
+                          }}
+                        >
+                          {cl.label}
+                        </span>
+                        <button
+                          className="btn-ghost"
+                          onClick={() =>
+                            toggleExpandedDetail({
+                              key: `clause-${i}`,
+                              kind: "CLAUSE",
+                              title: cl.label,
+                              color: cl.color,
+                              body: String(cl.val || ""),
+                            })
+                          }
+                          style={{ padding: "3px 8px", fontSize: "8px" }}
+                        >
+                          {expandedDetail?.key === `clause-${i}`
+                            ? "CONTRACT"
+                            : "EXPAND"}
+                        </button>
+                      </div>
                       <span
                         style={{
-                          fontSize: "10px",
+                          fontSize: "11px",
                           fontWeight: "700",
-                          textTransform: "uppercase",
-                          letterSpacing: "1px",
+                          lineHeight: "1.35",
+                          color: "#e2e8f0",
+                          textTransform: "none",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          wordBreak: "break-word",
+                          overflowWrap: "anywhere",
                         }}
                       >
-                        {cl.label}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "22px",
-                          fontWeight: "900",
-                          fontStyle: "italic",
-                          color: cl.color,
-                        }}
-                      >
-                        {cl.val}
+                        {trimText(cl.val, 180)}
                       </span>
                     </div>
                   ))}
@@ -2476,7 +2530,7 @@ export default function FormulaAI() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gridTemplateColumns: "repeat(3,minmax(0,1fr))",
                   gap: "12px",
                 }}
               >
@@ -2502,6 +2556,9 @@ export default function FormulaAI() {
                         padding: "16px 14px",
                         position: "relative",
                         paddingTop: "20px",
+                        minHeight: "140px",
+                        maxHeight: "160px",
+                        overflow: "hidden",
                       }}
                     >
                       <div
@@ -2521,15 +2578,61 @@ export default function FormulaAI() {
                       </div>
                       <div
                         style={{
-                          fontSize: "11px",
-                          fontWeight: "700",
-                          textTransform: "uppercase",
-                          lineHeight: "1.5",
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
                           marginTop: "4px",
-                          color: panelDataError ? "#94a3b8" : C.text,
+                          marginBottom: "4px",
                         }}
                       >
-                        {item.text}
+                        <span
+                          style={{
+                            fontSize: "9px",
+                            color: C.muted,
+                            textTransform: "uppercase",
+                            letterSpacing: "1px",
+                            fontWeight: "700",
+                          }}
+                        >
+                          DETAIL
+                        </span>
+                        <button
+                          className="btn-ghost"
+                          onClick={() =>
+                            toggleExpandedDetail({
+                              key: `recommendation-${i}`,
+                              kind: "RECOMMENDATION",
+                              title: priority,
+                              color: priorityColor,
+                              body: String(item.text || ""),
+                            })
+                          }
+                          style={{ padding: "3px 8px", fontSize: "8px" }}
+                        >
+                          {expandedDetail?.key === `recommendation-${i}`
+                            ? "CONTRACT"
+                            : "EXPAND"}
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          lineHeight: "1.5",
+                          color: panelDataError ? "#94a3b8" : C.text,
+                          textTransform: "none",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 6,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          wordBreak: "break-word",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {trimText(item.text, 260)}
                       </div>
                     </div>
                   );
@@ -2555,6 +2658,9 @@ export default function FormulaAI() {
                   display: "flex",
                   flexDirection: "column",
                   gap: "10px",
+                  maxHeight: "380px",
+                  overflowY: "auto",
+                  paddingRight: "4px",
                 }}
               >
                 {insights.map((ins, i) => (
@@ -2567,6 +2673,9 @@ export default function FormulaAI() {
                       opacity: ins.shown ? 1 : 0.2,
                       transition: "opacity .5s",
                       animation: ins.shown ? "slideRow .4s ease" : "none",
+                      minHeight: "92px",
+                      maxHeight: "140px",
+                      overflow: "hidden",
                     }}
                   >
                     <div
@@ -2594,8 +2703,28 @@ export default function FormulaAI() {
                           color: C.muted,
                           fontWeight: "700",
                           textTransform: "uppercase",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
                         }}
                       >
+                        <button
+                          className="btn-ghost"
+                          onClick={() =>
+                            toggleExpandedDetail({
+                              key: `insight-${i}`,
+                              kind: "INSIGHT",
+                              title: ins.id,
+                              color: ins.color,
+                              body: String(ins.text || ""),
+                            })
+                          }
+                          style={{ padding: "3px 8px", fontSize: "8px" }}
+                        >
+                          {expandedDetail?.key === `insight-${i}`
+                            ? "CONTRACT"
+                            : "EXPAND"}
+                        </button>
                         {ins.shown ? ins.conf : "—"}
                       </span>
                     </div>
@@ -2603,12 +2732,19 @@ export default function FormulaAI() {
                       style={{
                         fontSize: "11px",
                         fontWeight: "700",
-                        textTransform: "uppercase",
+                        textTransform: "none",
                         lineHeight: "1.5",
                         color: ins.shown ? "#fff" : "#222",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 5,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
                       }}
                     >
-                      {ins.text}
+                      {trimText(ins.text, 520)}
                     </div>
                   </div>
                 ))}
@@ -2994,16 +3130,25 @@ export default function FormulaAI() {
                     preserveAspectRatio="none"
                     viewBox="0 0 100 40"
                   >
-                    <path
-                      d="M0 32 Q10 22 20 27 T40 12 T60 22 T80 7 T100 17"
-                      fill="none"
-                      stroke={C.primary}
-                      strokeWidth="2"
-                    />
-                    <path
-                      d="M0 32 Q10 22 20 27 T40 12 T60 22 T80 7 T100 17 L100 40 L0 40Z"
-                      fill={`${C.primary}22`}
-                    />
+                    {hasVelocitySeries ? (
+                      <>
+                        <path d={velocityAreaPath} fill={`${C.primary}22`} />
+                        <path
+                          d={velocityLinePath}
+                          fill="none"
+                          stroke={C.primary}
+                          strokeWidth="2"
+                        />
+                      </>
+                    ) : (
+                      <path
+                        d="M0 40 L100 40"
+                        fill="none"
+                        stroke="#334155"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 3"
+                      />
+                    )}
                   </svg>
                 </div>
               </div>
@@ -3071,6 +3216,84 @@ export default function FormulaAI() {
           </div>
         </footer>
       </div>
+
+      {expandedDetail && (
+        <div
+          onClick={() => setExpandedDetail(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            zIndex: 120,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(900px, 92vw)",
+              height: "min(72vh, 620px)",
+              background: "#07090f",
+              border: `2px solid ${expandedDetail.color || C.primary}`,
+              boxShadow: "10px 10px 0 #000",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              transform: "scale(1)",
+              transition: "all .22s ease",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "10px 12px",
+                borderBottom: `1px solid ${C.grid}`,
+                background: "#000",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                  fontWeight: "900",
+                  color: expandedDetail.color || C.primary,
+                }}
+              >
+                {expandedDetail.kind} / {expandedDetail.title}
+              </div>
+              <button
+                className="btn-ghost"
+                onClick={() => setExpandedDetail(null)}
+                style={{ fontSize: "9px" }}
+              >
+                CONTRACT
+              </button>
+            </div>
+
+            <div
+              style={{
+                padding: "14px",
+                fontSize: "13px",
+                lineHeight: "1.6",
+                color: "#f8fafc",
+                overflowY: "auto",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                overflowWrap: "anywhere",
+                textTransform: "none",
+              }}
+            >
+              {expandedDetail.body}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

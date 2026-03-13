@@ -25,7 +25,7 @@ class PipelinePhase(str, Enum):
     SEGMENT = "segment"
     SUMMARIZE = "summarize"
     STAKEHOLDER = "stakeholder"
-    IMPACT = "impact"
+    STRUCTURE = "structure"
 
 
 # ============================================================================
@@ -223,10 +223,16 @@ class UploadResponse(BaseModel):
     size_bytes: int
 
 
+class UploadBatchResponse(BaseModel):
+    """POST /upload-multiple response."""
+    files: List[UploadResponse]
+
+
 class RunRequest(BaseModel):
     """POST /run request body."""
     text: Optional[str] = Field(None, min_length=10)
     file_id: Optional[str] = None
+    file_ids: Optional[List[str]] = None
 
 
 class RunResponse(BaseModel):

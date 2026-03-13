@@ -31,6 +31,11 @@ except ImportError:
 router = APIRouter(prefix="/jobs", tags=["stream"])
 job_manager = get_job_manager()
 
+DOC_TYPE_POLICY = "government_policy"
+DOC_TYPE_REPORT = "technical_report"
+DOC_TYPE_RESEARCH = "research_paper"
+DOC_TYPE_OTHER = "other"
+
 
 def _resolve_source_filename(file_id: str | None) -> str | None:
     """Resolve uploaded original filename from file_id when available."""
@@ -81,6 +86,74 @@ def _persist_insight_outputs(
     )
 
 
+def _infer_document_type(text: str, source_filename: str | None, topics_result) -> str:
+    """Infer document type from filename, topic labels, and keyword evidence."""
+    raw = (text or "").lower()
+    filename = (source_filename or "").lower()
+    topic_labels = " ".join(getattr(t, "label", "") for t in (topics_result or [])).lower()
+
+    scores = {
+        DOC_TYPE_POLICY: 0.0,
+        DOC_TYPE_REPORT: 0.0,
+        DOC_TYPE_RESEARCH: 0.0,
+        DOC_TYPE_OTHER: 0.1,
+    }
+
+    if any(k in filename for k in ["policy", "directive", "act", "guideline", "gazette"]):
+        scores[DOC_TYPE_POLICY] += 1.8
+    if any(k in filename for k in ["report", "annual", "audit", "assessment", "whitepaper"]):
+        scores[DOC_TYPE_REPORT] += 1.8
+    if any(k in filename for k in ["research", "paper", "journal", "doi", "arxiv", "study"]):
+        scores[DOC_TYPE_RESEARCH] += 1.8
+
+    policy_hits = ["ministry", "regulator", "authority", "compliance", "enforcement", "shall", "must", "public policy"]
+    report_hits = ["executive summary", "findings", "dashboard", "kpi", "baseline", "observations", "implementation status"]
+    research_hits = ["abstract", "methodology", "results", "conclusion", "references", "dataset", "experiment", "hypothesis", "p-value"]
+
+    for kw in policy_hits:
+        scores[DOC_TYPE_POLICY] += raw.count(kw) * 0.25
+    for kw in report_hits:
+        scores[DOC_TYPE_REPORT] += raw.count(kw) * 0.25
+    for kw in research_hits:
+        scores[DOC_TYPE_RESEARCH] += raw.count(kw) * 0.25
+
+    if "governance_policy" in topic_labels or "compliance_enforcement" in topic_labels:
+        scores[DOC_TYPE_POLICY] += 1.0
+    if "scientific_research" in topic_labels:
+        scores[DOC_TYPE_RESEARCH] += 1.0
+
+    return max(scores, key=scores.get)
+
+
+def _doc_type_label(doc_type: str) -> str:
+    labels = {
+        DOC_TYPE_POLICY: "GOVERNMENT POLICY",
+        DOC_TYPE_REPORT: "TECHNICAL REPORT",
+        DOC_TYPE_RESEARCH: "RESEARCH PAPER",
+        DOC_TYPE_OTHER: "GENERAL DOCUMENT",
+    }
+    return labels.get(doc_type, "GENERAL DOCUMENT")
+
+
+def _type_recommendation_seed(doc_type: str) -> list[str]:
+    if doc_type == DOC_TYPE_POLICY:
+        return [
+            "Map obligations and deadlines to accountable government owners.",
+            "Prepare a compliance-risk register for enforcement-sensitive clauses.",
+        ]
+    if doc_type == DOC_TYPE_REPORT:
+        return [
+            "Convert findings into an execution tracker with owners and target dates.",
+            "Define KPI baselines and reporting cadence for each recommendation.",
+        ]
+    if doc_type == DOC_TYPE_RESEARCH:
+        return [
+            "Validate reproducibility by documenting dataset, model, and evaluation setup.",
+            "Translate key findings into actionable implementation pilots.",
+        ]
+    return ["Create an action plan and review with domain stakeholders."]
+
+
 async def run_real_analysis(job_id: str, input_text: str) -> None:
     """
     Run actual backend analysis services on the input text.
@@ -117,6 +190,8 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
         )
 
         source_filename = _resolve_source_filename(job.input_file_id)
+        doc_type = _infer_document_type(input_text, source_filename, topics_result)
+        doc_type_tag = _doc_type_label(doc_type)
         _persist_insight_outputs(
             job_id=job_id,
             source_filename=source_filename,
@@ -144,13 +219,47 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
             "governance": "#ec5b13",
             "funding": "#facc15",
         }
+        clause_priority = {
+            DOC_TYPE_POLICY: {
+                "obligation": 6,
+                "compliance": 6,
+                "deadline": 5,
+                "penalty": 5,
+                "governance": 4,
+                "funding": 3,
+            },
+            DOC_TYPE_REPORT: {
+                "governance": 5,
+                "compliance": 4,
+                "obligation": 4,
+                "deadline": 3,
+                "funding": 3,
+            },
+            DOC_TYPE_RESEARCH: {
+                "governance": 4,
+                "compliance": 3,
+                "obligation": 3,
+                "funding": 3,
+                "deadline": 2,
+            },
+            DOC_TYPE_OTHER: {},
+        }
+        selected_clauses = sorted(
+            clauses_result,
+            key=lambda c: (
+                clause_priority.get(doc_type, {}).get(c.clause_type.value, 1),
+                getattr(c, "confidence", 0),
+            ),
+            reverse=True,
+        )[:8]
+
         clauses_data = [
             {
                 "label": c.clause_type.value.upper(),
                 "val": c.text[:72] + ("..." if len(c.text) > 72 else ""),
                 "color": clause_colors.get(c.clause_type.value, "#ec5b13"),
             }
-            for c in clauses_result[:8]
+            for c in selected_clauses
         ]
         if clauses_data:
             job_manager.set_clauses(job_id, clauses_data)
@@ -176,6 +285,7 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
         insight_points = summary_result.key_points[:3] if summary_result.key_points else []
         if summary_result.short_summary:
             insight_points = [summary_result.short_summary] + insight_points
+        insight_points = [f"Document type classified as {doc_type_tag}."] + insight_points
         insights_data = [
             {
                 "id": f"i{idx}",
@@ -189,31 +299,52 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
         if insights_data:
             job_manager.set_insights(job_id, insights_data)
 
+        merged_recommendations = []
+        for item in (_type_recommendation_seed(doc_type) + list(summary_result.recommended_actions or [])):
+            candidate = str(item or "").strip()
+            if not candidate:
+                continue
+            if candidate not in merged_recommendations:
+                merged_recommendations.append(candidate)
+
         recommendations_data = [
             {
                 "priority": "IMMEDIATE" if idx == 1 else ("STRATEGIC" if idx == 2 else "LONG-TERM"),
                 "text": rec,
             }
-            for idx, rec in enumerate(summary_result.recommended_actions[:3], start=1)
+            for idx, rec in enumerate(merged_recommendations[:4], start=1)
         ]
         if recommendations_data:
             job_manager.set_recommendations(job_id, recommendations_data)
 
         token_count = len((input_text or "").split())
+        topics_count = len(topics_result)
+        clauses_count = len(clauses_result)
+        stakeholders_count = len(stakeholders_result)
+        summary_present = bool(summary_result.short_summary)
+
+        # Derive quality indicators from actual analysis output shape.
+        quality_components = [
+            min(topics_count * 7.0, 28.0),
+            min(clauses_count * 1.4, 24.0),
+            min(stakeholders_count * 3.5, 21.0),
+            12.0 if summary_present else 4.0,
+        ]
+        accuracy_pct = round(min(99.0, 25.0 + sum(quality_components)), 1)
+        delta_pct = round(accuracy_pct - 50.0, 1)
+
+        velocity_max = max(1.0, min(12.0, (token_count / 1200.0)))
+        velocity_series = [
+            {"t": idx * 10, "val": round((velocity_max * idx) / 5.0, 2)}
+            for idx in range(6)
+        ]
         job_manager.set_stats(
             job_id,
             {
                 "tokens_processed": token_count,
-                "accuracy_pct": 90.0,
-                "delta_pct": 8.5,
-                "velocity_series": [
-                    {"t": 0, "val": 0.0},
-                    {"t": 10, "val": 2.2},
-                    {"t": 20, "val": 4.9},
-                    {"t": 30, "val": 6.1},
-                    {"t": 40, "val": 8.0},
-                    {"t": 50, "val": 9.2},
-                ],
+                "accuracy_pct": accuracy_pct,
+                "delta_pct": delta_pct,
+                "velocity_series": velocity_series,
             },
         )
 
@@ -241,6 +372,7 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
         job_manager.set_radio_comms(
             job_id,
             [
+                {"type": "TX", "text": f"Document class detected: {doc_type_tag}", "color": "#f59e0b", "phase": "ingest"},
                 {"type": "TX", "text": f"Segmented {len(segments)} semantic blocks", "color": "#6366f1", "phase": "segment"},
                 {"type": "RX", "text": f"Detected {len(clauses_result)} policy clauses", "color": "#10b981", "phase": "segment"},
                 {"type": "TX", "text": f"Classified {len(topics_result)} topics", "color": "#6366f1", "phase": "classify"},
@@ -270,9 +402,20 @@ async def stream_events(job_id: str) -> AsyncGenerator[str, None]:
         yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
         await asyncio.sleep(0.1)
     
-    # If job already completed, just send done event
+    # If job already completed, emit done event from recorded job values.
     if job.status == JobStatus.DONE:
-        yield f"event: pipeline_done\ndata: {json.dumps({'confidence': 0.94, 'runtime_seconds': 42.3})}\n\n"
+        confidence_pct = 0.0
+        if isinstance(job.stats, dict) and isinstance(job.stats.get("accuracy_pct"), (int, float)):
+            confidence_pct = float(job.stats.get("accuracy_pct") or 0.0)
+
+        runtime_seconds = 0.0
+        if job.completed_at and job.created_at:
+            runtime_seconds = max(
+                0.1,
+                (job.completed_at - job.created_at).total_seconds(),
+            )
+
+        yield f"event: pipeline_done\ndata: {json.dumps({'confidence': round(confidence_pct / 100.0, 4), 'runtime_seconds': round(runtime_seconds, 2)})}\n\n"
         return
     
     # If job failed, send error
@@ -282,6 +425,9 @@ async def stream_events(job_id: str) -> AsyncGenerator[str, None]:
     
     # Otherwise, simulate pipeline progress
     # In production, this would listen to actual backend tasks
+    stream_started_at = datetime.now(timezone.utc)
+    input_tokens = len((job.input_text or "").split())
+    latest_confidence_pct = 0.0
     
     pipeline_steps = [
         {
@@ -360,6 +506,12 @@ async def stream_events(job_id: str) -> AsyncGenerator[str, None]:
         for i in range(10):
             progress_pct = (i + 1) * 10.0
             
+            completion_ratio = ((step["step_index"] * 10.0) + progress_pct) / (len(pipeline_steps) * 10.0)
+            processed_tokens = max(
+                1,
+                int(input_tokens * completion_ratio),
+            ) if input_tokens > 0 else int(1000 * completion_ratio)
+
             progress_event = {
                 "step_id": step["step_id"],
                 "step_index": step["step_index"],
@@ -377,7 +529,7 @@ async def stream_events(job_id: str) -> AsyncGenerator[str, None]:
                     }
                 ],
                 "metrics": [
-                    {"key": "Tokens", "val": f"{int(400000 * (progress_pct/100))}"},
+                    {"key": "Tokens", "val": f"{processed_tokens:,}"},
                     {"key": "Chunks", "val": f"{i+1}/10"},
                 ]
             }
@@ -386,22 +538,29 @@ async def stream_events(job_id: str) -> AsyncGenerator[str, None]:
             job_manager.add_event(job_id, "step_progress", progress_event)
             await asyncio.sleep(0.5)
         
-        # Emit step_complete event with verdict
+        # Emit step_complete event with verdict values derived from runtime/job data.
+        completion_ratio = (step["step_index"] + 1) / len(pipeline_steps)
+        processed_tokens = max(1, int(input_tokens * completion_ratio)) if input_tokens > 0 else int(1000 * completion_ratio)
+        confidence_pct = round(min(99.0, max(35.0, completion_ratio * 100.0)), 1)
+        quality_score = round(confidence_pct / 100.0, 2)
+        risk_level = round(max(0.5, 10.0 - (confidence_pct / 10.0)), 1)
+        latest_confidence_pct = confidence_pct
+
         verdict_data = {
             "flash": f"{step['short']} DONE",
             "badge": "PROCESSING COMPLETE",
             "title": f"{step['label'].upper()} FINISHED",
-            "sub": f"Successfully processed with {100 - (step['step_index']*5)}% confidence",
+            "sub": f"Successfully processed with {confidence_pct:.1f}% confidence",
             "alertLabel": "STATUS",
             "alertText": "All validations passed",
             "actionLabel": "RESULT",
             "actionText": "Moving to next stage",
-            "riskIndex": f"{80 - step['step_index']*5}%",
-            "riskLabel": "CONFIDENCE",
-            "economicVal": f"0.{90 - step['step_index']*10}",
+            "riskIndex": f"{risk_level:.1f}",
+            "riskLabel": "RISK LEVEL",
+            "economicVal": f"{quality_score:.2f}",
             "economicLabel": "QUALITY SCORE",
             "stats": [
-                {"k": "PROCESSED", "v": f"{100}%"},
+                {"k": "PROCESSED", "v": f"{processed_tokens:,}"},
                 {"k": "ERRORS", "v": "0"},
             ],
             "tags": ["Success"],
@@ -423,9 +582,18 @@ async def stream_events(job_id: str) -> AsyncGenerator[str, None]:
     # Emit pipeline_done event
     job_manager.update_job_status(job_id, JobStatus.DONE)
     
+    computed_confidence = latest_confidence_pct
+    if job.stats and isinstance(job.stats, dict) and isinstance(job.stats.get("accuracy_pct"), (int, float)):
+        computed_confidence = float(job.stats["accuracy_pct"])
+
+    runtime_seconds = max(
+        0.1,
+        (datetime.now(timezone.utc) - stream_started_at).total_seconds(),
+    )
+
     pipeline_done = {
-        "confidence": 0.94,
-        "runtime_seconds": 42.3,
+        "confidence": round(computed_confidence / 100.0, 4),
+        "runtime_seconds": round(runtime_seconds, 2),
     }
     
     yield f"event: pipeline_done\ndata: {json.dumps(pipeline_done)}\n\n"

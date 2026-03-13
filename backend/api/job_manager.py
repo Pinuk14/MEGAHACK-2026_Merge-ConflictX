@@ -12,6 +12,7 @@ from backend.api.models import JobStatus, PipelinePhase
 import io
 import importlib
 import re
+import zipfile
 
 
 @dataclass
@@ -202,7 +203,8 @@ class JobManager:
         """Get uploaded file content by file_id."""
         for path in self._file_storage.glob(f"{file_id}_*"):
             if path.is_file():
-                if path.suffix.lower() == ".pdf":
+                suffix = path.suffix.lower()
+                if suffix == ".pdf":
                     try:
                         pdfplumber = importlib.import_module("pdfplumber")
                         with pdfplumber.open(io.BytesIO(path.read_bytes())) as pdf:
@@ -215,6 +217,44 @@ class JobManager:
 
                     # PDF exists but no extractable text (e.g., scanned image-only PDF)
                     return ""
+
+                if suffix in {".txt", ".xml", ".json"}:
+                    text = self._sanitize_text(path.read_text(encoding="utf-8", errors="ignore"))
+                    if self._is_low_quality_text(text):
+                        return ""
+                    return text
+
+                if suffix == ".docx":
+                    try:
+                        with zipfile.ZipFile(path) as zf:
+                            xml = zf.read("word/document.xml").decode("utf-8", errors="ignore")
+                        # Strip XML tags to plain text.
+                        xml = re.sub(r"</w:p>", "\n", xml)
+                        text = re.sub(r"<[^>]+>", " ", xml)
+                        text = self._sanitize_text(text)
+                        return text
+                    except Exception:
+                        return ""
+
+                if suffix in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}:
+                    try:
+                        ocr_mod = importlib.import_module("backend.cleaning.ocr_module")
+                        ocr = ocr_mod.OCRModule()
+                        text = self._sanitize_text(ocr.extract_text_from_image_path(path))
+                        return text
+                    except Exception:
+                        return ""
+
+                if suffix == ".wav":
+                    try:
+                        sf = importlib.import_module("soundfile")
+                        info = sf.info(str(path))
+                        duration = float(info.frames) / float(info.samplerate or 1)
+                        return self._sanitize_text(
+                            f"Audio file metadata: duration {duration:.2f}s, sample_rate {info.samplerate}Hz, channels {info.channels}."
+                        )
+                    except Exception:
+                        return ""
 
                 text = self._sanitize_text(path.read_text(encoding="utf-8", errors="ignore"))
                 if self._is_low_quality_text(text):
