@@ -1,0 +1,195 @@
+# =========================
+
+# OS Files
+
+# =========================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+
+# Environment Variables
+
+# =========================
+
+.env
+.env.*
+*.env
+
+# =========================
+
+# Python
+
+# =========================
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+
+venv/
+env/
+ENV/
+.venv/
+
+# Python build
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# pytest
+
+.pytest_cache/
+
+# mypy
+
+.mypy_cache/
+
+# coverage
+
+.coverage
+coverage.xml
+htmlcov/
+
+# =========================
+
+# Logs
+
+# =========================
+
+logs/
+*.log
+
+# =========================
+
+# Data / Storage
+
+# =========================
+
+storage/raw_documents/
+storage/cleaned_documents/
+storage/embeddings/
+storage/outputs/
+
+# ML datasets
+
+ml/datasets/raw/
+ml/datasets/processed/
+
+# =========================
+
+# Models & Embeddings
+
+# =========================
+
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.model
+
+# HuggingFace cache
+
+.cache/
+huggingface/
+
+# Ollama / local models
+
+models/
+
+# =========================
+
+# Vector Databases
+
+# =========================
+
+*.faiss
+*.index
+*.vector
+faiss_index/
+
+# =========================
+
+# Notebooks
+
+# =========================
+
+.ipynb_checkpoints/
+
+# =========================
+
+# React / Frontend
+
+# =========================
+
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# npm
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vite
+
+.vite/
+
+# =========================
+
+# Browser Extension Builds
+
+# =========================
+
+browser-extension/dist/
+
+# =========================
+
+# Docker
+
+# =========================
+
+docker-data/
+*.tar
+
+# =========================
+
+# IDEs
+
+# =========================
+
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# =========================
+
+# Temporary Files
+
+# =========================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# =========================
+
+# Generated Reports
+
+# =========================
+
+reports/
+*.pdf
+*.docx
+*.csv
