@@ -9,6 +9,9 @@ let copilotSettings = {
 };
 const observerBuffers = {};
 const observerTickState = {};
+const autoAnalyzeState = {};
+const mappingBuffers = {};
+const mappingFlushState = {};
 
 chrome.storage.local.get(["autoAnalyzeEnabled", "copilotSettings"], (result) => {
   if (typeof result.autoAnalyzeEnabled === "boolean") {
@@ -36,6 +39,94 @@ function enqueueObserverEvent(tabId, eventPayload) {
   observerBuffers[tabId].push(eventPayload);
   if (observerBuffers[tabId].length > 40) {
     observerBuffers[tabId] = observerBuffers[tabId].slice(-40);
+  }
+
+  // Also enqueue for mapping if relevant
+  try {
+    enqueueMappingStep(tabId, eventPayload);
+  } catch (e) {
+    // ignore mapping enqueue errors
+  }
+}
+
+function ensureMappingBucket(tabId) {
+  if (!mappingBuffers[tabId]) mappingBuffers[tabId] = [];
+  if (!mappingFlushState[tabId]) mappingFlushState[tabId] = { inFlight: false, lastFlush: 0 };
+}
+
+function enqueueMappingStep(tabId, event) {
+  ensureMappingBucket(tabId);
+  // Only record a mapping step when the observed page URL actually changes.
+  // This avoids creating many map entries for repeated DOM events on the same page.
+  const buf = mappingBuffers[tabId];
+  const curUrl = normalizePageUrl(event?.url || "");
+  let lastUrl = null;
+  if (buf && buf.length > 0) {
+    const last = buf[buf.length - 1];
+    lastUrl = normalizePageUrl(last?.url || "");
+  }
+
+  // If the URL hasn't changed, skip adding a new mapping step.
+  if (lastUrl && lastUrl === curUrl) {
+    // Optionally, we could update the timestamp of the last step instead of pushing a duplicate.
+    try {
+      if (buf && buf.length > 0) buf[buf.length - 1].ts = event.ts || Date.now();
+    } catch (e) {
+      // ignore
+    }
+  } else {
+    // Only keep recent N steps per tab
+    mappingBuffers[tabId].push(event);
+    if (mappingBuffers[tabId].length > 120) mappingBuffers[tabId] = mappingBuffers[tabId].slice(-120);
+  }
+
+  // flush heuristics: flush when buffer large or on clicks/navigation
+  const type = String(event?.type || "").toUpperCase();
+  // Trigger a flush for navigation-style events or when buffer grows large.
+  if (["NAVIGATE", "PAGE_OBSERVED"].includes(type) || mappingBuffers[tabId].length >= 20) {
+    scheduleMappingFlush(tabId, 300);
+  }
+}
+
+function scheduleMappingFlush(tabId, delayMs = 800) {
+  ensureMappingBucket(tabId);
+  const state = mappingFlushState[tabId];
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = setTimeout(() => flushMappingBuffer(tabId), delayMs);
+}
+
+async function flushMappingBuffer(tabId) {
+  ensureMappingBucket(tabId);
+  const state = mappingFlushState[tabId];
+  if (state.inFlight) return;
+  const buf = mappingBuffers[tabId] || [];
+  if (!buf.length) return;
+
+  state.inFlight = true;
+  const payload = {
+    session_id: null,
+    steps: buf.map((e) => ({
+      url: e.url || null,
+      title: e.title || null,
+      selector: e.element?.selector || (e.dom_map ? null : null),
+      action: e.type || null,
+      value: e.value || (e.element && (e.element.value || e.element.text)) || null,
+      timestamp: e.ts || Date.now()
+    })),
+    metadata: { source: "extension_observer" }
+  };
+
+  try {
+    const res = await postWithRetries("http://127.0.0.1:8000/mapping/upload", payload, 2);
+    if (res.ok) {
+      // Clear buffer on success
+      mappingBuffers[tabId] = [];
+      state.lastFlush = Date.now();
+    }
+  } catch (e) {
+    // ignore
+  } finally {
+    state.inFlight = false;
   }
 }
 
@@ -125,6 +216,40 @@ function shortSummaryText(summary) {
     return summary.executive_summary.slice(0, 400);
   }
   return "";
+}
+
+function normalizePageUrl(url) {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.toString();
+  } catch (e) {
+    return String(url || "");
+  }
+}
+
+function buildAutoAnalyzeKey(url, title) {
+  return `${normalizePageUrl(url)}::${String(title || "").slice(0, 140)}`;
+}
+
+function maybeAutoAnalyze(tabId, tab, reason = "") {
+  if (!autoAnalyzeEnabled) return;
+  if (!tab?.url || !String(tab.url).startsWith("http")) return;
+
+  const key = buildAutoAnalyzeKey(tab.url, tab.title || "");
+  if (autoAnalyzeState[tabId]?.key === key) return;
+
+  if (autoAnalyzeState[tabId]?.timer) {
+    clearTimeout(autoAnalyzeState[tabId].timer);
+  }
+
+  autoAnalyzeState[tabId] = {
+    key,
+    reason,
+    timer: setTimeout(() => {
+      analyzeTab(tabId);
+    }, 900)
+  };
 }
 
 async function applyAutoAssistToTab(tabId, url) {
@@ -283,12 +408,9 @@ async function analyzeTab(tabId) {
         try {
           const hash = btoa(unescape(encodeURIComponent(response.data.metadata.url + response.data.metadata.title)));
           // Build payload similar to interactive analyze: include combined text and attachments if available
-          const main = response.data?.text_content?.main_content || "";
-          const headings = Array.isArray(response.data?.text_content?.headings) ? response.data.text_content.headings.join("\n\n") : "";
-          const paragraphs = Array.isArray(response.data?.text_content?.paragraphs) ? response.data.text_content.paragraphs.join("\n\n") : "";
-          const bodyFallback = response.data?.text || "";
-          const combined = [main, headings, paragraphs, bodyFallback].filter(Boolean).join("\n\n");
-          const text = combined.trim();
+          const main = (response.data?.text_content?.main_content || "").trim();
+          const bodyFallback = (response.data?.full_text || response.data?.text || "").trim();
+          const text = (main.length >= 120 ? main : bodyFallback);
 
           // Decide if title looks like a real filename/title or a transient page
           const title = (response.data.metadata?.title || "").trim();
@@ -321,9 +443,34 @@ async function analyzeTab(tabId) {
           if (!postResult.ok) console.warn("Auto analyze API error:", postResult.error);
           else if (assistModeEnabled && postResult.json) {
             const summary = postResult.json?.insight?.executive_summary || postResult.json?.insight?.summary || null;
-            const text = shortSummaryText(summary);
-            if (text) {
-              await sendMessageToTabWithInject(tabId, { action: "showSummaryOverlay", summary: text });
+            let overlayText = shortSummaryText(summary);
+
+            const quizData = response.data?.quiz_data || {};
+            if ((quizData.question_count || 0) > 0) {
+              const quizPayload = {
+                url: response.data?.metadata?.url || null,
+                title: response.data?.metadata?.title || null,
+                full_text: response.data?.full_text || text,
+                full_html: response.data?.full_html || response.data?.text_content?.main_html || null,
+                analysis_summary: summary,
+                quiz_data: quizData
+              };
+
+              const quizPlanResult = await postWithRetries("http://127.0.0.1:8000/quiz_solve", quizPayload, 2);
+              if (quizPlanResult.ok) {
+                const quizPlan = quizPlanResult.json || {};
+                const answers = Array.isArray(quizPlan.answers) ? quizPlan.answers : [];
+                if (answers.length > 0) {
+                  const answerLines = answers
+                    .map((ans) => `Q${ans.question_index}: ${ans.selected_option_text || "(no option selected)"}`)
+                    .join("\n");
+                  overlayText = [overlayText, "Quiz answers:", answerLines].filter(Boolean).join("\n\n");
+                }
+              }
+            }
+
+            if (overlayText) {
+              await sendMessageToTabWithInject(tabId, { action: "showSummaryOverlay", summary: overlayText });
             }
           }
         } catch (err) {
@@ -336,21 +483,34 @@ async function analyzeTab(tabId) {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete") return;
   if (!tab?.url || !tab.url.startsWith("http")) return;
 
-  if (autoAnalyzeEnabled) {
-    analyzeTab(tabId);
-  }
+  if (changeInfo.status === "complete" || typeof changeInfo.url === "string") {
+    if (autoAnalyzeEnabled) {
+      maybeAutoAnalyze(tabId, tab, changeInfo.status === "complete" ? "load_complete" : "url_changed");
+    }
 
-  if (assistModeEnabled) {
-    applyAutoAssistToTab(tabId, tab.url);
-  }
+    if (assistModeEnabled) {
+      applyAutoAssistToTab(tabId, tab.url);
+    }
 
-  if (continuousLoopEnabled && assistModeEnabled) {
-    ensureObserverRunning(tabId);
-  } else {
-    stopObserver(tabId);
+    if (continuousLoopEnabled && assistModeEnabled) {
+      ensureObserverRunning(tabId);
+    } else {
+      stopObserver(tabId);
+    }
+  }
+});
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    if (!tab?.url || !String(tab.url).startsWith("http")) return;
+    if (autoAnalyzeEnabled) maybeAutoAnalyze(activeInfo.tabId, tab, "tab_activated");
+    if (assistModeEnabled) applyAutoAssistToTab(activeInfo.tabId, tab.url);
+    if (continuousLoopEnabled && assistModeEnabled) ensureObserverRunning(activeInfo.tabId);
+  } catch (e) {
+    // ignore activation errors
   }
 });
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -379,12 +539,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Caching: generate hash
         const hash = btoa(unescape(encodeURIComponent(response.data.metadata.url + response.data.metadata.title)));
         // Prepare payload for backend: build a robust text field
-        const main = response.data?.text_content?.main_content || "";
-        const headings = Array.isArray(response.data?.text_content?.headings) ? response.data.text_content.headings.join("\n\n") : "";
-        const paragraphs = Array.isArray(response.data?.text_content?.paragraphs) ? response.data.text_content.paragraphs.join("\n\n") : "";
-        const bodyFallback = response.data?.text || "";
-        const combined = [main, headings, paragraphs, bodyFallback].filter(Boolean).join("\n\n");
-        const text = combined.trim();
+        const main = (response.data?.text_content?.main_content || "").trim();
+        const bodyFallback = (response.data?.full_text || response.data?.text || "").trim();
+        const text = (main.length >= 120 ? main : bodyFallback);
 
         if (!text || text.length < 20) {
           sendResponse({ error: "Page content too short to analyze (need >=20 characters)." });
@@ -517,6 +674,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "setAutoAnalyze") {
     autoAnalyzeEnabled = Boolean(request.enabled);
     chrome.storage.local.set({ autoAnalyzeEnabled });
+    if (autoAnalyzeEnabled) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs?.[0];
+        const tabId = tab?.id;
+        if (!tabId || !tab?.url || !tab.url.startsWith("http")) return;
+        maybeAutoAnalyze(tabId, tab, "toggle_enabled");
+      });
+    }
     sendResponse({ ok: true, enabled: autoAnalyzeEnabled });
     return true;
   }
@@ -595,6 +760,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           sendResponse({ message: summaryMessage, results });
         } catch (err) {
           sendResponse({ error: "API error: " + (err.message || String(err)) });
+        }
+      })();
+    });
+    return true;
+  }
+
+  if (request.action === "executeMappedPlan") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tabId = tabs?.[0]?.id;
+      if (!tabId) {
+        sendResponse({ error: "No active tab found." });
+        return;
+      }
+
+      (async () => {
+        try {
+          const execResponse = await sendMessageToTabWithInject(tabId, { action: "executeActionPlan", actions: request.actions || [] });
+          if (!execResponse || execResponse.error) {
+            sendResponse({ error: execResponse?.error || "Failed to execute actions." });
+            return;
+          }
+
+          sendResponse({ ok: true, message: execResponse.message || "Executed mapped plan.", results: execResponse.results || [] });
+        } catch (err) {
+          sendResponse({ error: err.message || String(err) });
+        }
+      })();
+    });
+    return true;
+  }
+
+  if (request.action === "validateMappedPlan") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tabId = tabs?.[0]?.id;
+      if (!tabId) {
+        sendResponse({ error: "No active tab found." });
+        return;
+      }
+
+      (async () => {
+        try {
+          const resp = await sendMessageToTabWithInject(tabId, { action: "validateActionPlan", actions: request.actions || [] });
+          if (!resp || resp.error) {
+            sendResponse({ ok: false, error: resp?.error || "Validation error" });
+            return;
+          }
+          sendResponse({ ok: true, validations: resp.validations || [] });
+        } catch (err) {
+          sendResponse({ ok: false, error: err?.message || String(err) });
         }
       })();
     });

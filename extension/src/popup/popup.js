@@ -1,6 +1,8 @@
 const chat = document.getElementById("chat");
 const promptInput = document.getElementById("prompt");
 const sendBtn = document.getElementById("sendBtn");
+const mapGoalInput = document.getElementById("mapGoal");
+const planMapBtn = document.getElementById("planMapBtn");
 const chatStatusEl = document.getElementById("chatStatus");
 const chatErrorEl = document.getElementById("chatError");
 
@@ -167,7 +169,7 @@ function runAnalyze() {
     console.log("Received response from scrapeAndAnalyze", response);
     setAnalysisStatus("");
     if (response?.summary) {
-      setAnalysisSummary(formatSummary(response.summary));
+      let summaryText = formatSummary(response.summary);
 
       const quizExecution = response?.quiz_execution;
       const diagnostics = response?.diagnostics;
@@ -186,8 +188,11 @@ function runAnalyze() {
 
         if (answerLines) {
           appendMessage("bot", `Selected answers:\n${answerLines}`);
+          summaryText = [summaryText, "Quiz answers:", answerLines].filter(Boolean).join("\n\n");
         }
       }
+
+      setAnalysisSummary(summaryText);
 
       if (diagnostics) {
         appendMessage(
@@ -242,8 +247,86 @@ async function sendAutomationRequest() {
   });
 }
 
+async function planMapGoalRequest() {
+  const goal = (mapGoalInput && mapGoalInput.value || "").trim();
+  if (!goal) return setChatError("Provide a goal to plan.");
+
+  setChatError("");
+  appendMessage("user", `Plan goal: ${goal}`);
+  setChatStatus("Requesting map planner...");
+
+  try {
+    const listResp = await fetch("http://127.0.0.1:8000/mapping/list");
+    const listJson = await listResp.json();
+    const maps = Array.isArray(listJson.maps) ? listJson.maps : [];
+    if (!maps.length) {
+      setChatError("No maps available. Let the extension observe navigation first.");
+      setChatStatus("");
+      return;
+    }
+    const mapId = maps[0].map_id;
+
+    const postResp = await fetch(`http://127.0.0.1:8000/mapping/${mapId}/plan_goal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal })
+    });
+    const planJson = await postResp.json();
+    setChatStatus("");
+
+    if (!planJson.ok) {
+      setChatError(planJson.message || planJson.error || "Planner failed");
+      return;
+    }
+
+    const actions = planJson.actions || [];
+    if (!actions.length) {
+      appendMessage("bot", "Planner returned no actions.");
+      return;
+    }
+
+    const lines = actions.map((a, i) => `${i + 1}. ${a.type} -> ${a.target || a.url || a.value || "(no target)"}`).join("\n");
+    appendMessage("bot", `Planned actions:\n${lines}`);
+
+    // Validate actions live on the active tab before executing
+    chrome.runtime.sendMessage({ action: "validateMappedPlan", actions }, (valResp) => {
+      if (!valResp || !valResp.ok) {
+        appendMessage("bot", `Validation failed: ${valResp?.error || 'unknown error'}`);
+        return;
+      }
+
+      const validations = Array.isArray(valResp.validations) ? valResp.validations : [];
+      const validCount = validations.filter(v => v.ok).length;
+      const invalidCount = validations.length - validCount;
+      const details = validations.map((v, i) => `${i + 1}. ${v.ok ? 'OK' : 'BAD'} - ${v.action.type || v.action?.type || 'ACTION'} ${v.action.target || v.action.url || ''} ${v.reason ? `(${v.reason})` : ''}`).join("\n");
+
+      appendMessage("bot", `Validation: ${validCount}/${validations.length} valid.\n${details}`);
+
+      const proceed = invalidCount === 0 ? true : confirm(`Validation found ${invalidCount} potential problems. Proceed to execute anyway?`);
+      if (!proceed) {
+        appendMessage("bot", "Execution cancelled by user.");
+        return;
+      }
+
+      chrome.runtime.sendMessage({ action: "executeMappedPlan", actions }, (execResp) => {
+        if (execResp?.error) {
+          appendMessage("bot", `Execution error: ${execResp.error}`);
+        } else if (execResp?.ok) {
+          appendMessage("bot", execResp.message || "Executed mapped plan.");
+        } else {
+          appendMessage("bot", "Execution completed (unknown status)");
+        }
+      });
+    });
+  } catch (err) {
+    setChatStatus("");
+    setChatError(err.message || String(err));
+  }
+}
+
 analyzeBtn.addEventListener("click", runAnalyze);
 sendBtn.addEventListener("click", sendAutomationRequest);
+if (planMapBtn) planMapBtn.addEventListener("click", planMapGoalRequest);
 promptInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") sendAutomationRequest();
 });

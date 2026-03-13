@@ -98,7 +98,7 @@ ml/datasets/processed/
 
 .cache/
 huggingface/
-
+mapping_store/
 # Ollama / local models
 
 

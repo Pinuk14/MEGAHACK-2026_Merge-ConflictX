@@ -555,10 +555,22 @@ function extractPageContent() {
   };
 
   function detectMainContent() {
-    const mainTags = ["article", "main", "section", "[role='main']", "[itemtype*='Article']", "[itemtype*='article']"];
+    const mainTags = [
+      "#mw-content-text",
+      ".mw-parser-output",
+      "#content",
+      "article",
+      "main",
+      "section",
+      "[role='main']",
+      "[itemtype*='Article']",
+      "[itemtype*='article']"
+    ];
     for (const tag of mainTags) {
       const el = document.querySelector(tag);
-      if (isVisible(el)) return { text: el.innerText, html: el.innerHTML };
+      if (isVisible(el) && (el.innerText || "").trim().length > 120) {
+        return { text: el.innerText, html: el.outerHTML };
+      }
     }
 
     let largestDiv = null;
@@ -571,12 +583,12 @@ function extractPageContent() {
       }
     }
 
-    if (largestDiv) return { text: largestDiv.innerText, html: largestDiv.innerHTML };
+    if (largestDiv) return { text: largestDiv.innerText, html: largestDiv.outerHTML };
     return { text: document.body.innerText || "", html: document.body.innerHTML || "" };
   }
 
-  // Prefer full-page scrape: capture entire document HTML and body text
-  const main = { text: document.body?.innerText || "", html: document.documentElement?.outerHTML || "" };
+  // Primary content extraction is used for summary text while full_html is still sent separately.
+  const main = detectMainContent();
 
   const text_content = {
     main_content: main.text || "",
@@ -833,6 +845,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
       } catch (err) {
         sendResponse({ error: "Execution error: " + (err.message || String(err)) });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === "validateActionPlan") {
+    (async () => {
+      try {
+        const actions = request.actions || [];
+        const validations = [];
+        for (const action of actions) {
+          const type = String(action?.type || "").toUpperCase();
+          const target = action?.target || action?.url || action?.value || "";
+          let ok = false;
+          let reason = null;
+
+          try {
+            if (type === "NAVIGATE") {
+              ok = !!action.url || !!action.value || !!action.target;
+            } else if (type === "TYPE") {
+              const el = findInputElement(target);
+              ok = !!el;
+              if (!ok) reason = "input not found";
+            } else if (type === "CLICK") {
+              const el = findClickableElement(target);
+              ok = !!el;
+              if (!ok) reason = "clickable element not found";
+            } else if (type === "SELECT") {
+              const el = findSelectElement(target);
+              ok = !!el;
+              if (!ok) reason = "select element not found";
+            } else if (type === "SCROLL") {
+              ok = true; // scroll target can default to body
+            } else {
+              // unknown action types are considered not valid for execution
+              ok = false;
+              reason = `unsupported action type: ${type}`;
+            }
+          } catch (err) {
+            ok = false;
+            reason = err?.message || String(err);
+          }
+
+          validations.push({ action, ok, reason });
+        }
+
+        sendResponse({ ok: true, validations });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
       }
     })();
     return true;

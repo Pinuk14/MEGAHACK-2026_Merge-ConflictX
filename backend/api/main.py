@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from backend.api.routes.analysis import router as analysis_router
 from backend.api.routes.automation import router as automation_router
 from backend.api.routes.ingestion import router as ingestion_router
+from backend.api.routes.mapping import router as mapping_router
 
 app = FastAPI(title="Merge-ConflictX API", version="1.0.0")
 
@@ -15,3 +16,4 @@ def health() -> dict:
 app.include_router(ingestion_router)
 app.include_router(analysis_router)
 app.include_router(automation_router)
+app.include_router(mapping_router)

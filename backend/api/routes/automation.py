@@ -278,6 +278,13 @@ def _validate_and_cast_actions(actions_raw: Any) -> List[AutomationAction]:
     if not isinstance(actions_raw, list):
         return []
 
+    def _as_optional_str(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, (str, int, float, bool)):
+            return str(value)
+        return None
+
     cleaned: List[AutomationAction] = []
     for action in actions_raw:
         if not isinstance(action, dict):
@@ -293,15 +300,18 @@ def _validate_and_cast_actions(actions_raw: Any) -> List[AutomationAction]:
             delay = 500
         delay = max(100, min(delay, 5000))
 
-        cleaned.append(
-            AutomationAction(
-                type=action_type,
-                target=action.get("target"),
-                value=action.get("value"),
-                url=action.get("url"),
-                delayMs=delay,
+        try:
+            cleaned.append(
+                AutomationAction(
+                    type=action_type,
+                    target=_as_optional_str(action.get("target")),
+                    value=_as_optional_str(action.get("value")),
+                    url=_as_optional_str(action.get("url")),
+                    delayMs=delay,
+                )
             )
-        )
+        except Exception:
+            continue
 
     return cleaned
 
@@ -348,91 +358,6 @@ def _llm_automation_plan(query: str, url: Optional[str], dom_map: Dict[str, Any]
     return _validate_and_cast_actions(repair_raw.get("actions"))
 
 
-def _tokenize(text: str) -> List[str]:
-    return [t for t in re.split(r"[^a-z0-9]+", _normalize(text)) if len(t) > 2]
-
-
-def _build_context_tokens(request: QuizSolveRequest) -> List[str]:
-    tokens: List[str] = []
-    if request.url:
-        tokens.extend(_tokenize(request.url))
-    if request.title:
-        tokens.extend(_tokenize(request.title))
-    if request.analysis_summary:
-        short = request.analysis_summary.get("short_summary") if isinstance(request.analysis_summary, dict) else ""
-        tokens.extend(_tokenize(str(short or "")))
-    return tokens
-
-
-def _pick_best_option(question_text: str, options: List[Dict[str, Any]], context_tokens: List[str]) -> Dict[str, Any]:
-    # Heuristic scorer with URL/title/summary context. This is the deterministic fallback planner.
-    # You can replace this with an external LLM call while keeping same return shape.
-    best = options[0] if options else {"text": "", "selector": None}
-    best_score = -1
-
-    q_tokens = set(_tokenize(question_text))
-
-    for opt in options:
-        text = str(opt.get("text") or "")
-        opt_tokens = _tokenize(text)
-        score = 0
-
-        for tok in opt_tokens:
-            if tok in context_tokens:
-                score += 3
-            if tok in q_tokens:
-                score += 1
-
-        # Bias for common quiz-positive answer patterns
-        if re.search(r"\b(all of the above|true|correct|google cloud|gcp)\b", text, flags=re.IGNORECASE):
-            score += 2
-
-        if score > best_score:
-            best_score = score
-            best = opt
-
-    return best
-
-
-def _build_quiz_actions(quiz_data: Dict[str, Any], context_tokens: List[str]) -> Tuple[List[Dict[str, Any]], List[AutomationAction]]:
-    answers: List[Dict[str, Any]] = []
-    actions: List[AutomationAction] = []
-
-    questions = quiz_data.get("questions") or []
-    submit_candidates = quiz_data.get("submit_candidates") or []
-
-    for idx, q in enumerate(questions, start=1):
-        if not isinstance(q, dict):
-            continue
-        question_text = str(q.get("question_text") or "")
-        options = q.get("options") or []
-        if not options:
-            continue
-
-        best = _pick_best_option(question_text, options, context_tokens)
-        target = best.get("input_id") or best.get("selector") or best.get("text")
-
-        answers.append(
-            {
-                "question_index": idx,
-                "question_text": question_text,
-                "selected_option_text": best.get("text"),
-                "selected_target": target,
-            }
-        )
-
-        if target:
-            actions.append(AutomationAction(type="CLICK", target=str(target), delayMs=400))
-
-    # Safety guard: click submit only if at least one answer action exists.
-    if actions and submit_candidates:
-        submit_target = submit_candidates[0].get("id") or submit_candidates[0].get("selector") or submit_candidates[0].get("text")
-        if submit_target:
-            actions.append(AutomationAction(type="CLICK", target=str(submit_target), delayMs=600))
-
-    return answers, actions
-
-
 def _llm_quiz_answers(request: QuizSolveRequest, memory_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     quiz_data = request.quiz_data or {}
     questions = quiz_data.get("questions") or []
@@ -463,8 +388,10 @@ def _llm_quiz_answers(request: QuizSolveRequest, memory_context: Optional[Dict[s
             "url": request.url,
             "title": request.title,
             "summary": request.analysis_summary,
+            "full_html": request.full_html or "",
             "questions": minimal_questions,
             "memory_context": memory_context or {},
+            "instruction": "Use complete HTML and choose only options that are explicitly present in the page/question context.",
         },
         ensure_ascii=False,
     )
@@ -496,6 +423,55 @@ def _llm_quiz_answers(request: QuizSolveRequest, memory_context: Optional[Dict[s
     return answers
 
 
+def _llm_verify_quiz_answers_against_html(
+    request: QuizSolveRequest,
+    draft_answers: List[Dict[str, Any]],
+    memory_context: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    if not draft_answers:
+        return []
+
+    questions = (request.quiz_data or {}).get("questions") or []
+    if not isinstance(questions, list) or not questions:
+        return draft_answers
+
+    minimal_questions = []
+    for idx, q in enumerate(questions, start=1):
+        if not isinstance(q, dict):
+            continue
+        opts = q.get("options") or []
+        minimal_questions.append(
+            {
+                "question_index": idx,
+                "question_text": q.get("question_text"),
+                "options": [o.get("text") for o in opts if isinstance(o, dict)],
+            }
+        )
+
+    system_prompt = (
+        "You validate quiz answers against HTML and question options. "
+        "Correct any unsupported answer. "
+        "Return ONLY JSON: {\"answers\":[{\"question_index\":number,\"selected_option_text\":string,\"reason\":string}]}."
+    )
+    user_prompt = json.dumps(
+        {
+            "url": request.url,
+            "title": request.title,
+            "full_html": request.full_html or "",
+            "questions": minimal_questions,
+            "draft_answers": draft_answers,
+            "memory_context": memory_context or {},
+            "rule": "Selected option text must exist in each question's options and be supported by page content.",
+        },
+        ensure_ascii=False,
+    )
+
+    verified = _ollama.generate_json(system_prompt=system_prompt, user_prompt=user_prompt)
+    if verified and isinstance(verified.get("answers"), list) and verified.get("answers"):
+        return verified.get("answers")
+    return draft_answers
+
+
 def _llm_extract_quiz_from_html(full_html: Optional[str], memory_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Ask the LLM to extract quiz structure from raw page HTML.
 
@@ -505,13 +481,12 @@ def _llm_extract_quiz_from_html(full_html: Optional[str], memory_context: Option
         return {}
 
     system = (
-        "You are an HTML analyzer. Given a cleaned preview of page HTML text (scripts/styles removed), extract any quiz/assessment questions. "
+        "You are an HTML analyzer. Given the complete page HTML, extract any quiz/assessment questions. "
         "Return ONLY valid JSON with schema: {\"question_count\": number, \"questions\": [{\"question_text\": string, \"options\": [{\"text\": string}] }], \"submit_candidates\": [{\"text\": string}] }. "
         "Do not include any extra text."
     )
 
-    preview = _clean_html_preview(full_html)
-    user = json.dumps({"html_preview": preview, "memory_context": memory_context or {}}, ensure_ascii=False)
+    user = json.dumps({"full_html": full_html or "", "memory_context": memory_context or {}}, ensure_ascii=False)
     raw = _ollama.generate_json(system_prompt=system, user_prompt=user)
     if not raw:
         return {}
@@ -564,9 +539,8 @@ def _answers_to_actions(quiz_data: Dict[str, Any], llm_answers: List[Dict[str, A
                     break
 
         if best is None:
-            # fallback to first option if LLM response mismatched
-            first = options[0]
-            best = first if isinstance(first, dict) else None
+            # Strict LLM mode: never guess by picking a default option.
+            continue
 
         if not best:
             continue
@@ -745,10 +719,14 @@ def automation_plan(request: AutomationPlanRequest) -> AutomationPlanResponse:
                     qs_req = QuizSolveRequest(url=request.url, title=None, full_text=None, analysis_summary=None, quiz_data=quiz_data, full_html=request.full_html)
                     llm_answers = _llm_quiz_answers(qs_req, memory_context=memory_ctx)
                     if llm_answers:
-                        answers_out, actions = _answers_to_actions(quiz_data, llm_answers)
+                        verified_answers = _llm_verify_quiz_answers_against_html(
+                            qs_req,
+                            llm_answers,
+                            memory_context=memory_ctx,
+                        )
+                        answers_out, actions = _answers_to_actions(quiz_data, verified_answers)
                     else:
-                        context_tokens = _build_context_tokens(qs_req)
-                        answers_out, actions = _build_quiz_actions(quiz_data, context_tokens)
+                        actions = []
                     quiz_actions_count = len(actions)
     except Exception:
         pass
@@ -807,13 +785,17 @@ def quiz_solve(request: QuizSolveRequest) -> QuizSolveResponse:
             # proceed with whatever quiz_data is available
             pass
 
-    # 1) Try LLM-based quiz answering, 2) fallback to deterministic scorer
+    # Strict LLM-only quiz solving path.
     llm_answers = _llm_quiz_answers(request, memory_context=memory_ctx)
     if llm_answers:
-        answers, actions = _answers_to_actions(request.quiz_data or {}, llm_answers)
+        verified_answers = _llm_verify_quiz_answers_against_html(
+            request,
+            llm_answers,
+            memory_context=memory_ctx,
+        )
+        answers, actions = _answers_to_actions(request.quiz_data or {}, verified_answers)
     else:
-        context_tokens = _build_context_tokens(request)
-        answers, actions = _build_quiz_actions(request.quiz_data or {}, context_tokens)
+        answers, actions = [], []
     return QuizSolveResponse(answers=answers, actions=actions)
 
 
