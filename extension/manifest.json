@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Page Analyzer",
+  "version": "2.0",
+  "description": "Scrape webpage and send data to backend for AI analysis.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "src/background/service_worker.js"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content_scripts/scraper.js"]
+    }
+  ]
+}

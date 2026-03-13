@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Page Analyzer</title>
+  <style>
+    body { font-family: Arial, sans-serif; width: 360px; margin: 10px; }
+    #chat { height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; border-radius: 6px; }
+    .msg { margin: 6px 0; }
+    .user { font-weight: bold; }
+    .bot { color: #333; }
+    #analysis { margin-bottom: 12px; }
+    #analysisControls { display: flex; align-items: center; gap: 8px; }
+    #analysisSummary { margin-top: 8px; }
+    #analysisStatus { color: #888; margin-top: 6px; }
+    #analysisError { color: red; margin-top: 6px; }
+    #controls { display: flex; gap: 6px; margin-top: 8px; }
+    #prompt { flex: 1; padding: 6px; }
+    #sendBtn { padding: 6px 12px; }
+    #chatStatus { color: #888; margin-top: 8px; }
+    #chatError { color: red; margin-top: 8px; }
+    hr { margin: 12px 0; border: none; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <h2>Page Analyzer</h2>
+  <div id="analysis">
+    <div id="analysisControls">
+      <button id="analyzeBtn">Analyze This Page</button>
+      <label>
+        <input id="autoAnalyzeToggle" type="checkbox" /> Analyze all pages
+      </label>
+    </div>
+    <div id="analysisStatus"></div>
+    <div id="analysisSummary"></div>
+    <div id="analysisError"></div>
+  </div>
+
+  <hr />
+
+  <h3>Chatbot & Automation</h3>
+  <div id="chat"></div>
+  <div id="controls">
+    <input id="prompt" type="text" placeholder="Type a command..." />
+    <button id="sendBtn">Send</button>
+  </div>
+  <div id="chatStatus"></div>
+  <div id="chatError"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
