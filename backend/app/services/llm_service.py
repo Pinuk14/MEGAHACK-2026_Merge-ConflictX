@@ -46,7 +46,7 @@ class LLMConfig:
     def from_env(cls) -> "LLMConfig":
         return cls(
             host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
-            model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
+            model=os.environ.get("OLLAMA_MODEL", "mistral:latest"),
             temperature=float(os.environ.get("LLM_TEMPERATURE", "0.2")),
             max_output_tokens=int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "2048")),
         )
