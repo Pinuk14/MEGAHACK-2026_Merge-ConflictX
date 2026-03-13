@@ -37,6 +37,28 @@ DOC_TYPE_RESEARCH = "research_paper"
 DOC_TYPE_OTHER = "other"
 
 
+def _normalize_display_text(value: str, max_len: int = 280) -> str:
+    text = str(value or "")
+    text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_len:
+        return text
+    clipped = text[: max_len - 3].rstrip()
+    if " " in clipped:
+        clipped = clipped.rsplit(" ", 1)[0]
+    return f"{clipped}..."
+
+
+def _priority_from_text(text: str, idx: int) -> str:
+    low = str(text or "").lower()
+    if re.search(r"\b(immediate|urgent|critical|deadline|must|asap)\b", low):
+        return "IMMEDIATE"
+    if re.search(r"\b(strategy|plan|roadmap|milestone|owner|governance)\b", low):
+        return "STRATEGIC"
+    return "IMMEDIATE" if idx == 0 else ("STRATEGIC" if idx == 1 else "LONG-TERM")
+
+
 def _resolve_source_filename(file_id: str | None) -> str | None:
     """Resolve uploaded original filename from file_id when available."""
     if not file_id:
@@ -256,7 +278,7 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
         clauses_data = [
             {
                 "label": c.clause_type.value.upper(),
-                "val": c.text[:72] + ("..." if len(c.text) > 72 else ""),
+                "val": _normalize_display_text(c.text, max_len=200),
                 "color": clause_colors.get(c.clause_type.value, "#ec5b13"),
             }
             for c in selected_clauses
@@ -282,10 +304,30 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
         if stakeholders_data:
             job_manager.set_stakeholders(job_id, stakeholders_data)
 
-        insight_points = summary_result.key_points[:3] if summary_result.key_points else []
+        top_topic = topics_result[0].label.replace("_", " ").title() if topics_result else "General Policy"
+        top_clause = selected_clauses[0] if selected_clauses else None
+        insight_points = [
+            f"Primary document theme: {top_topic} ({max(1, min(100, int(round((topics_result[0].confidence if topics_result else 0.5) * 100))))}%).",
+        ]
+        if top_clause is not None:
+            insight_points.append(
+                f"Top {top_clause.clause_type.value} clause: {_normalize_display_text(top_clause.text, max_len=180)}"
+            )
+        if summary_result.key_points:
+            insight_points.extend(_normalize_display_text(kp, max_len=260) for kp in summary_result.key_points[:3])
         if summary_result.short_summary:
-            insight_points = [summary_result.short_summary] + insight_points
+            insight_points = [_normalize_display_text(summary_result.short_summary, max_len=360)] + insight_points
         insight_points = [f"Document type classified as {doc_type_tag}."] + insight_points
+
+        deduped_points = []
+        seen_points = set()
+        for point in insight_points:
+            normalized = re.sub(r"\s+", " ", str(point).lower()).strip()
+            if not normalized or normalized in seen_points:
+                continue
+            seen_points.add(normalized)
+            deduped_points.append(point)
+
         insights_data = [
             {
                 "id": f"i{idx}",
@@ -294,22 +336,26 @@ async def run_real_analysis(job_id: str, input_text: str) -> None:
                 "color": "#10b981" if idx == 1 else ("#f59e0b" if idx == 2 else "#ef4444"),
                 "shown_after_step": "summarize" if idx < 3 else "stakeholder",
             }
-            for idx, p in enumerate(insight_points[:4], start=1)
+            for idx, p in enumerate(deduped_points[:5], start=1)
         ]
         if insights_data:
             job_manager.set_insights(job_id, insights_data)
 
         merged_recommendations = []
+        merged_seen = set()
         for item in (_type_recommendation_seed(doc_type) + list(summary_result.recommended_actions or [])):
-            candidate = str(item or "").strip()
+            candidate = _normalize_display_text(item or "", max_len=260)
             if not candidate:
                 continue
-            if candidate not in merged_recommendations:
-                merged_recommendations.append(candidate)
+            norm = re.sub(r"\s+", " ", candidate.lower())
+            if norm in merged_seen:
+                continue
+            merged_seen.add(norm)
+            merged_recommendations.append(candidate)
 
         recommendations_data = [
             {
-                "priority": "IMMEDIATE" if idx == 1 else ("STRATEGIC" if idx == 2 else "LONG-TERM"),
+                "priority": _priority_from_text(rec, idx - 1),
                 "text": rec,
             }
             for idx, rec in enumerate(merged_recommendations[:4], start=1)

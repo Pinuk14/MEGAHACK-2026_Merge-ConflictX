@@ -14,6 +14,7 @@ from backend.api.routes.jobs import router as jobs_router
 from backend.api.routes.data import router as data_router
 from backend.api.routes.stream import router as stream_router
 from backend.api.routes.report import router as report_router
+from backend.api.routes.chatbot import router as chatbot_router
 from backend.api.models import HealthResponse
 from backend.pipelines.orchestration import FinalPipeline, FinalPipelineConfig
 
@@ -150,3 +151,4 @@ app.include_router(jobs_router)
 app.include_router(data_router)
 app.include_router(stream_router)
 app.include_router(report_router)
+app.include_router(chatbot_router)

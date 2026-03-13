@@ -4,14 +4,15 @@
 
 MEGAHACK-2026_Merge-ConflictX is a modular platform for multimodal document analysis, legal AI, and data processing. It integrates backend services, frontend interfaces, machine learning pipelines, and infrastructure for scalable document ingestion, cleaning, feature extraction, vector-based retrieval, validation, and export.
 
-The platform now supports two connected backend analysis layers:
+The platform now supports three connected backend analysis layers:
 
 1. **Data Pipeline (Parse/Clean/Chunk/Embed/Index)**
 2. **Insight Pipeline (Semantic Segmentation/Clause Detection/Stakeholder Extraction/Topic Classification/Summarization)**
+3. **Chatbot RAG Layer (Dataset Collections + Session Memory + Long-term Conversational Retrieval)**
 
 Combined end-to-end flow:
 
-`raw_documents -> cleaned_documents -> embeddings + FAISS -> insight extraction -> outputs -> API -> frontend`
+`raw_documents -> cleaned_documents -> embeddings + FAISS -> insight extraction -> outputs -> chatbot collections/sessions -> API -> frontend`
 
 ---
 
@@ -67,6 +68,8 @@ README.md          # Project overview and instructions
   - `package.json` (Frontend dependencies)
 - **Interactions:**
   - Calls backend APIs for data processing and visualization
+  - Includes mission-scoped chatbot UI with quick-question actions
+  - Persists active mission/session/chat transcript in browser localStorage for refresh recovery
   - Handles export and integration formats
 
 ### extension/
@@ -95,8 +98,11 @@ README.md          # Project overview and instructions
 - **Key Files/Folders:**
   - `logs/` (System logs)
   - `storage/` (Document storage: cleaned, embeddings, outputs, raw)
+  - `storage/chatbot/collections/<collection_id>/` (RAG chunks, FAISS index, metadata)
+  - `storage/chatbot/collections/<collection_id>/sessions/<session_id>/` (history + session memory index)
 - **Interactions:**
   - Backend reads/writes processed and raw documents
+  - Chatbot service persists collection indexes and conversational memory state
 
 ### scripts/
 
@@ -134,6 +140,17 @@ README.md          # Project overview and instructions
 4. Clause detection, stakeholder extraction, and topic classification run on segments
 5. Summarization creates executive summary
 6. Structured `DocumentInsight` is returned (and optionally persisted to `infrastructure/storage/outputs/insights`)
+
+#### Chatbot Request Flow (Collection + Ask + Memory)
+
+1. Frontend creates/reuses a chatbot collection from uploaded `file_ids` (`POST /chatbot/collections/from-files`).
+2. Collection stores chunked content + embeddings + FAISS index in `infrastructure/storage/chatbot/collections/<collection_id>/`.
+3. User asks a question (`POST /chatbot/ask`) with optional `session_id`.
+4. Backend retrieves document context from collection index (RAG retrieval).
+5. Backend retrieves short-term context (last N turns) and long-term session memories (semantic search over prior turns).
+6. Prompt combines: previous conversation, long-term memory snippets, current question, and retrieved document context.
+7. LLM generates answer; backend persists turn to session history and updates session memory index.
+8. Frontend displays answer with citations and keeps session continuity across refreshes.
 
 ### Job Processing/Data Flow
 
@@ -174,9 +191,12 @@ README.md          # Project overview and instructions
 - `main.py` (Backend entry point)
 - `backend/api/main.py` (API server)
 - `backend/api/routes/analysis.py` (`POST /analyze` insight endpoint)
+- `backend/api/routes/chatbot.py` (chatbot collection/session/Q&A endpoints)
+- `backend/app/services/chatbot_rag_service.py` (chatbot RAG + conversation memory service)
 - `backend/pipelines/orchestration.py` (Final pipeline runner)
 - `backend/app/pipelines/insight_pipeline.py` (Insight pipeline runner)
 - `frontend/src/index.jsx` (Frontend entry)
+- `frontend/src/pages/Chatbot.jsx` (mission chatbot UI + quick prompts + session controls)
 - `scripts/ingest_data.sh`, `scripts/run_pipeline.sh` (CLI batch jobs)
 - `docker/docker-compose.yml` (Container orchestration)
 
@@ -210,6 +230,19 @@ README.md          # Project overview and instructions
   - **Upload Endpoint**: `POST /ingestion/upload-texts` stores uploaded files and writes `infrastructure/storage/uploads/uploaded_documents.json` for production pipeline mode.
 - `backend/api/routes/analysis.py`
   - **Analyze Endpoint**: `POST /analyze` returns structured semantic insights and can persist them in outputs.
+- `backend/app/services/chatbot_rag_service.py`
+  - **Chatbot RAG Service**: Manages collection creation/appending, FAISS retrieval, LLM answering, session memory window, and long-term semantic memory retrieval.
+- `backend/api/routes/chatbot.py`
+  - **Chatbot Endpoints**:
+    - `GET /chatbot/collections`
+    - `POST /chatbot/collections/from-files`
+    - `POST /chatbot/collections/{collection_id}/files`
+    - `POST /chatbot/ask`
+    - `DELETE /chatbot/collections/{collection_id}/sessions/{session_id}`
+    - `DELETE /chatbot/collections/{collection_id}/sessions`
+    - `DELETE /chatbot/sessions`
+- `frontend/src/pages/Chatbot.jsx`
+  - **Chat UX Layer**: Supports mission selection, predefined quick questions, new-session reset, single-chat delete, global history clear, and refresh-safe local state.
 
 ---
 

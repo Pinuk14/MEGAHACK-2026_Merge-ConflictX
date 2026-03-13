@@ -545,7 +545,7 @@ function TrackMap({ progress, currentStep, completedSteps, stepProgress }) {
 }
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-export default function FormulaAI() {
+export default function FormulaAI({ onOpenChatbot }) {
   const [phase, setPhase] = useState("idle");
   const [curStep, setCurStep] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -590,6 +590,197 @@ export default function FormulaAI() {
   const cdRef = useRef(null);
   const eventSourceRef = useRef(null);
 
+  const cleanReadableText = (value, fallback = "") => {
+    const text = String(value || "")
+      .replace(/[\u0000-\u001F\u007F]/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text || fallback;
+  };
+
+  const titleCaseLabel = (value) =>
+    cleanReadableText(value)
+      .replace(/[_-]+/g, " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+
+  const inferRecommendationPriority = (text, idx = 0) => {
+    const low = String(text || "").toLowerCase();
+    if (/\b(immediate|urgent|critical|now|asap|deadline|must)\b/.test(low)) {
+      return "IMMEDIATE";
+    }
+    if (/\b(strategy|roadmap|plan|phase|milestone|owner)\b/.test(low)) {
+      return "STRATEGIC";
+    }
+    return idx === 0 ? "IMMEDIATE" : idx === 1 ? "STRATEGIC" : "LONG-TERM";
+  };
+
+  const uniqueBy = (items, keyFn) => {
+    const seen = new Set();
+    return (items || []).filter((item) => {
+      const key = keyFn(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const normalizePanelPayload = (raw) => {
+    const rawTopics = Array.isArray(raw?.topics)
+      ? raw.topics
+      : Array.isArray(raw?.topics?.topics)
+        ? raw.topics.topics
+        : [];
+    const topics = uniqueBy(
+      rawTopics
+        .map((t) => ({
+          label: titleCaseLabel(t?.label || t?.topic || "General Policy"),
+          pct: Math.max(1, Math.min(100, Number(t?.pct ?? t?.confidence ?? 0) || 0)),
+        }))
+        .filter((t) => t.label),
+      (t) => t.label.toLowerCase(),
+    ).slice(0, 6);
+
+    const rawClauses = Array.isArray(raw?.clauses)
+      ? raw.clauses
+      : Array.isArray(raw?.clauses?.clauses)
+        ? raw.clauses.clauses
+        : [];
+    const clauses = rawClauses
+      .map((c, idx) => ({
+        label: cleanReadableText(c?.label || c?.clause_type || "Other", "Other").toUpperCase(),
+        val: cleanReadableText(c?.val || c?.text || c?.rationale || ""),
+        color: c?.color || C.primary,
+        id: String(c?.id || `cl-${idx + 1}`),
+      }))
+      .filter((c) => c.val)
+      .slice(0, 12);
+
+    const rawInsights = Array.isArray(raw?.insights)
+      ? raw.insights
+      : Array.isArray(raw?.insights?.insights)
+        ? raw.insights.insights
+        : [];
+    const insights = rawInsights
+      .map((item, idx) => ({
+        id: item?.id || `i${idx + 1}`,
+        conf: cleanReadableText(item?.conf || "80%"),
+        text: cleanReadableText(item?.text || item?.summary || ""),
+        color: item?.color || C.primary,
+      }))
+      .filter((i) => i.text)
+      .slice(0, 8);
+
+    const rawRecs = Array.isArray(raw?.recommendations)
+      ? raw.recommendations
+      : Array.isArray(raw?.recommendations?.recommendations)
+        ? raw.recommendations.recommendations
+        : [];
+    const recommendations = rawRecs
+      .map((r, idx) => {
+        const text = cleanReadableText(r?.text || r?.detail || r?.recommendation || "");
+        return {
+          priority: cleanReadableText(r?.priority || inferRecommendationPriority(text, idx), "INFO").toUpperCase(),
+          text,
+        };
+      })
+      .filter((r) => r.text)
+      .slice(0, 6);
+
+    const rawStakeholders = Array.isArray(raw?.stakeholders)
+      ? raw.stakeholders
+      : Array.isArray(raw?.stakeholders?.groups)
+        ? raw.stakeholders.groups
+        : [];
+    const stakeholders = rawStakeholders.slice(0, 8);
+
+    const radio = Array.isArray(raw?.radio)
+      ? raw.radio
+      : Array.isArray(raw?.radio?.comms)
+        ? raw.radio.comms
+        : [];
+
+    return {
+      stats: raw?.stats || null,
+      structure: raw?.structure || null,
+      radio,
+      topics,
+      clauses,
+      recommendations,
+      insights,
+      stakeholders,
+      risk: raw?.risk || null,
+    };
+  };
+
+  const withGeneratedFallbacks = (normalized) => {
+    const next = {
+      ...normalized,
+      topics: [...(normalized.topics || [])],
+      clauses: [...(normalized.clauses || [])],
+      recommendations: [...(normalized.recommendations || [])],
+      insights: [...(normalized.insights || [])],
+    };
+
+    if (!next.insights.length && next.clauses.length) {
+      next.insights = next.clauses.slice(0, 4).map((cl, idx) => ({
+        id: `i${idx + 1}`,
+        conf: `${88 - idx * 5}%`,
+        text: `${titleCaseLabel(cl.label)} clause detected: ${cleanReadableText(cl.val)}`,
+        color: cl.color || C.primary,
+      }));
+    }
+
+    if (!next.topics.length && next.clauses.length) {
+      const counts = next.clauses.reduce((acc, cl) => {
+        const key = titleCaseLabel(cl.label || "General Policy");
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      const total = Object.values(counts).reduce((sum, n) => sum + n, 0) || 1;
+      next.topics = Object.entries(counts)
+        .map(([label, count]) => ({
+          label,
+          pct: Math.max(1, Math.round((count / total) * 100)),
+        }))
+        .slice(0, 5);
+    }
+
+    if (!next.recommendations.length) {
+      const seeded = [];
+      if (next.clauses.some((c) => /OBLIGATION|COMPLIANCE|DEADLINE/.test(c.label))) {
+        seeded.push("Create a compliance checklist with owners and target timelines.");
+      }
+      if (next.stakeholders.length) {
+        seeded.push("Prioritize communication with high-impact stakeholder groups.");
+      }
+      if (!seeded.length && next.insights.length) {
+        seeded.push("Translate top insights into an execution roadmap with milestones.");
+      }
+      seeded.push("Track implementation progress and refresh analysis after key updates.");
+
+      next.recommendations = uniqueBy(
+        seeded.map((text, idx) => ({
+          priority: inferRecommendationPriority(text, idx),
+          text,
+        })),
+        (item) => item.text.toLowerCase(),
+      ).slice(0, 4);
+    }
+
+    if (!next.clauses.length && next.insights.length) {
+      next.clauses = next.insights.slice(0, 4).map((ins, idx) => ({
+        label: "INSIGHT",
+        val: cleanReadableText(ins.text),
+        color: C.primary,
+        id: `gen-cl-${idx + 1}`,
+      }));
+    }
+
+    return next;
+  };
+
   // session clock
   useEffect(() => {
     sessionRef.current = setInterval(() => {
@@ -608,8 +799,12 @@ export default function FormulaAI() {
     setIsUploading(true);
     try {
       const formData = new FormData();
-      files.forEach((file) => formData.append("files", file));
       const endpoint = files.length > 1 ? "/upload-multiple" : "/upload";
+      if (files.length > 1) {
+        files.forEach((file) => formData.append("files", file));
+      } else {
+        formData.append("file", files[0]);
+      }
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         body: formData,
@@ -778,17 +973,19 @@ export default function FormulaAI() {
         fetch(`${API_BASE}/jobs/${jid}/risk`).then((r) => r.json()),
       ]);
 
-      setPanelData({
+      const normalized = normalizePanelPayload({
         stats,
         structure,
-        radio: radio.comms || [],
-        topics: topics.topics || [],
-        clauses: clauses.clauses || [],
-        recommendations: recs.recommendations || [],
-        insights: insights.insights || [],
-        stakeholders: stakeholders.groups || [],
+        radio,
+        topics,
+        clauses,
+        recommendations: recs,
+        insights,
+        stakeholders,
         risk,
       });
+
+      setPanelData(withGeneratedFallbacks(normalized));
       setPanelDataLoaded(true);
     } catch (err) {
       console.error("Failed to fetch panel data:", err);
@@ -1095,6 +1292,11 @@ export default function FormulaAI() {
   }));
 
   const recommendations = panelData.recommendations || [];
+  const analysisComplete =
+    phase === "done" &&
+    panelDataLoaded &&
+    doneIds.length === STEPS.length &&
+    fileIds.length > 0;
 
   const trimText = (value, maxLen = 220) => {
     const text = String(value || "")
@@ -1382,6 +1584,19 @@ export default function FormulaAI() {
 
           {/* Right controls */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {analysisComplete && (
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  if (typeof onOpenChatbot === "function") {
+                    onOpenChatbot({ fileIds });
+                  }
+                }}
+                style={{ marginLeft: "8px" }}
+              >
+                💬 OPEN CHATBOT
+              </button>
+            )}
             {phase !== "idle" && (
               <button
                 className="btn-ghost"

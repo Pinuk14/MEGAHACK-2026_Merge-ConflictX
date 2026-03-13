@@ -72,37 +72,45 @@ def _append_uploaded_manifest(file_id: str, filename: str, size_bytes: int, cont
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_file(
+    file: UploadFile | None = File(None),
+    files: List[UploadFile] | None = File(None),
+) -> UploadResponse:
     """
-    Upload a PDF or TXT file.
+    Upload a single supported file.
+    Accepts multipart field key `file` (preferred) and `files` (compatibility).
     Returns { file_id, filename, size_bytes }
     """
-    if not file:
+    selected_file = file
+    if selected_file is None and files:
+        selected_file = files[0]
+
+    if not selected_file:
         raise HTTPException(status_code=400, detail="No file provided")
     
     # Read file content
-    content = await file.read()
+    content = await selected_file.read()
     
     if not content:
         raise HTTPException(status_code=400, detail="File is empty")
     
-    _validate_supported_file(file.filename)
+    _validate_supported_file(selected_file.filename)
     
     # Save file to storage and get file_id
-    file_id = job_manager.save_uploaded_file(file.filename, content)
+    file_id = job_manager.save_uploaded_file(selected_file.filename, content)
 
     # Prepare upload manifest record for orchestration upload mode.
     extracted_text = job_manager.get_uploaded_file(file_id) or ""
     _append_uploaded_manifest(
         file_id=file_id,
-        filename=file.filename,
+        filename=selected_file.filename,
         size_bytes=len(content),
         content=extracted_text,
     )
     
     return UploadResponse(
         file_id=file_id,
-        filename=file.filename,
+        filename=selected_file.filename,
         size_bytes=len(content),
     )
 

@@ -1,5 +1,6 @@
 """Data endpoint routes for all panel information."""
 import json
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -16,6 +17,34 @@ from backend.api.job_manager import get_job_manager
 router = APIRouter(prefix="/jobs", tags=["data"])
 job_manager = get_job_manager()
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _normalize_display_text(value: str, max_len: int = 260) -> str:
+    text = str(value or "")
+    text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_len:
+        return text
+
+    clipped = text[: max_len - 3].rstrip()
+    if " " in clipped:
+        clipped = clipped.rsplit(" ", 1)[0]
+    return f"{clipped}..."
+
+
+def _title_case_label(value: str) -> str:
+    label = str(value or "").replace("_", " ").replace("-", " ").strip().lower()
+    return " ".join(part.capitalize() for part in label.split()) or "General Policy"
+
+
+def _priority_from_text(text: str, idx: int) -> str:
+    low = str(text or "").lower()
+    if re.search(r"\b(immediate|urgent|critical|deadline|must|asap)\b", low):
+        return "IMMEDIATE"
+    if re.search(r"\b(strategy|plan|roadmap|milestone|owner|governance)\b", low):
+        return "STRATEGIC"
+    return "IMMEDIATE" if idx == 0 else ("STRATEGIC" if idx == 1 else "LONG-TERM")
 
 
 def _load_persisted_insight_doc(job_id: str) -> dict | None:
@@ -39,13 +68,24 @@ def _insights_from_persisted_doc(doc: dict) -> list[Insight]:
         return []
 
     points: list[str] = []
-    short_summary = str(summary.get("short_summary") or "").strip()
+    short_summary = _normalize_display_text(summary.get("short_summary") or "", max_len=420)
     if short_summary:
         points.append(short_summary)
 
     key_points = summary.get("key_points")
     if isinstance(key_points, list):
-        points.extend(str(p).strip() for p in key_points if str(p).strip())
+        points.extend(_normalize_display_text(p, max_len=320) for p in key_points if str(p).strip())
+
+    points = [p for p in points if p]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for point in points:
+        norm = re.sub(r"\s+", " ", point.lower())
+        if norm in seen:
+            continue
+        seen.add(norm)
+        deduped.append(point)
+    points = deduped
 
     if not points:
         return []
@@ -83,16 +123,37 @@ def _clauses_from_persisted_doc(doc: dict) -> list[Clause]:
         if not isinstance(item, dict):
             continue
         clause_type = str(item.get("clause_type") or "other").strip().lower()
-        text = str(item.get("text") or "").strip()
+        text = _normalize_display_text(item.get("text") or "", max_len=200)
         if not text:
             continue
         output.append(
             Clause(
                 label=clause_type.upper(),
-                val=text[:72] + ("..." if len(text) > 72 else ""),
+                val=text,
                 color=clause_colors.get(clause_type, "#ec5b13"),
             )
         )
+    return output
+
+
+def _topics_from_persisted_doc(doc: dict) -> list[TopicBar]:
+    """Convert persisted topic artifacts into frontend topic bars."""
+    persisted_topics = doc.get("topics") if isinstance(doc, dict) else None
+    if not isinstance(persisted_topics, list):
+        return []
+
+    output: list[TopicBar] = []
+    for item in persisted_topics[:8]:
+        if not isinstance(item, dict):
+            continue
+        label = _title_case_label(item.get("label") or "General Policy")
+        raw_conf = item.get("confidence", 0.0)
+        try:
+            pct = int(round(float(raw_conf) * 100))
+        except Exception:
+            pct = 0
+        output.append(TopicBar(label=label, pct=max(1, min(100, pct))))
+
     return output
 
 
@@ -106,15 +167,19 @@ def _recommendations_from_persisted_doc(doc: dict) -> list[Recommendation]:
     if not isinstance(actions, list):
         return []
 
-    priority_cycle = ["IMMEDIATE", "STRATEGIC", "LONG-TERM"]
     recommendations: list[Recommendation] = []
+    seen: set[str] = set()
     for idx, action in enumerate(actions[:6]):
-        text = str(action).strip()
+        text = _normalize_display_text(action, max_len=240)
         if not text:
             continue
+        norm = re.sub(r"\s+", " ", text.lower())
+        if norm in seen:
+            continue
+        seen.add(norm)
         recommendations.append(
             Recommendation(
-                priority=priority_cycle[idx % len(priority_cycle)],
+                priority=_priority_from_text(text, idx),
                 text=text,
             )
         )
@@ -230,6 +295,12 @@ def get_job_topics(job_id: str) -> TopicsResponse:
         return TopicsResponse(
             topics=[TopicBar(**t) for t in job.topics]
         )
+
+    persisted_doc = _load_persisted_insight_doc(job_id)
+    if persisted_doc:
+        persisted_topics = _topics_from_persisted_doc(persisted_doc)
+        if persisted_topics:
+            return TopicsResponse(topics=persisted_topics)
 
     return TopicsResponse(topics=[])
 

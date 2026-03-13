@@ -314,6 +314,12 @@ class InsightPipeline:
     ) -> tuple[ExecutiveSummary, bool]:
         """Generate an LLM-powered executive summary with rule-based fallback."""
         assert self.llm_service is not None
+        rule_summary = self.summary_service.summarize(
+            text=content,
+            clauses=clauses,
+            stakeholders=stakeholders,
+            topics=topics,
+        )
         try:
             result = self.llm_service.summarize_document(
                 text=content,
@@ -323,20 +329,55 @@ class InsightPipeline:
             )
 
             if result and result.get("short_summary"):
-                return ExecutiveSummary(
+                llm_summary = ExecutiveSummary(
                     short_summary=str(result["short_summary"]),
                     key_points=[str(p) for p in result.get("key_points", [])],
                     recommended_actions=[
                         str(a) for a in result.get("recommended_actions", [])
                     ],
-                ), True
+                )
+                return self._merge_executive_summaries(llm_summary, rule_summary), True
         except Exception as exc:
             logger.error(f"LLM summarization failed: {exc}. Using rule-based summary.")
 
         # Fallback
-        return self.summary_service.summarize(
-            text=content, clauses=clauses, stakeholders=stakeholders, topics=topics
-        ), False
+        return rule_summary, False
+
+    @staticmethod
+    def _merge_executive_summaries(
+        llm_summary: ExecutiveSummary,
+        rule_summary: ExecutiveSummary,
+    ) -> ExecutiveSummary:
+        """Merge LLM and rule-based summaries to keep outputs both fluent and informative."""
+        short_summary = llm_summary.short_summary.strip() or rule_summary.short_summary.strip()
+        if len(short_summary) < len(rule_summary.short_summary.strip()) * 0.6:
+            short_summary = rule_summary.short_summary.strip()
+
+        key_points = InsightPipeline._dedupe_items(
+            [*llm_summary.key_points, *rule_summary.key_points]
+        )[:6]
+        actions = InsightPipeline._dedupe_items(
+            [*llm_summary.recommended_actions, *rule_summary.recommended_actions]
+        )[:5]
+
+        return ExecutiveSummary(
+            short_summary=short_summary,
+            key_points=key_points,
+            recommended_actions=actions,
+        )
+
+    @staticmethod
+    def _dedupe_items(items: List[str]) -> List[str]:
+        seen = set()
+        out: List[str] = []
+        for item in items:
+            text = str(item).strip()
+            key = " ".join(text.lower().split())
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(text)
+        return out
 
     # ------------------------------------------------------------------
     # Data loader
