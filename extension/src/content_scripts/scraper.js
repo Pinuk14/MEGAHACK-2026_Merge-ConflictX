@@ -1,4 +1,5 @@
 // Utility: Checks if an element is visible
+console.log("Content script loaded");
 function isVisible(elem) {
   const style = window.getComputedStyle(elem);
   return style.display !== "none" && style.visibility !== "hidden" && elem.offsetParent !== null;
@@ -129,6 +130,69 @@ function executeActionPlan(actions = []) {
   return results;
 }
 
+// Enhanced logging in extractPageContent
+// Ensure we have a single message listener and clear initialization log
+console.log("Content script initialized and ready to receive messages.");
+
+// Top-level error handler for unexpected issues
+try {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log("Content script: Received message", request);
+
+    if (request.action === "extractPageContent") {
+      // Wait for DOM ready before extracting
+      if (document.readyState !== "complete") {
+        window.addEventListener("load", () => {
+          try {
+            const data = extractPageContent();
+            console.log("Content script: Scraped data after load", data);
+            sendResponse({ data });
+          } catch (err) {
+            console.error("Content script: Scraping error after load", err);
+            sendResponse({ error: "Scraping error: " + err.message });
+          }
+        }, { once: true });
+        return true;
+      } else {
+        try {
+          const data = extractPageContent();
+          console.log("Content script: Scraped data", data);
+          sendResponse({ data });
+        } catch (err) {
+          console.error("Content script: Scraping error", err);
+          sendResponse({ error: "Scraping error: " + err.message });
+        }
+        return true;
+      }
+    }
+
+    if (request.action === "getDomMap") {
+      waitForDomReady().then(() => {
+        try {
+          const domMap = generateDOMMap();
+          sendResponse({ dom_map: domMap });
+        } catch (err) {
+          sendResponse({ error: "DOM map error: " + err.message });
+        }
+      });
+      return true;
+    }
+
+    if (request.action === "executeActionPlan") {
+      try {
+        const results = executeActionPlan(request.actions || []);
+        sendResponse({ results });
+      } catch (err) {
+        sendResponse({ error: "Execution error: " + err.message });
+      }
+      return true;
+    }
+  });
+} catch (err) {
+  console.error("Content script: Top-level error", err);
+}
+
+
 // Main extraction function
 function extractPageContent() {
   // --- Metadata ---
@@ -141,7 +205,6 @@ function extractPageContent() {
   };
 
   // --- Main Content ---
-  // Try to detect main content
   function detect_main_content() {
     const mainTags = ["article", "main", "section"];
     for (let tag of mainTags) {
@@ -277,50 +340,49 @@ function extractPageContent() {
   };
 }
 
-// Listen for messages from background
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "extractPageContent") {
-    // Wait for DOM ready
-    if (document.readyState !== "complete") {
-      window.addEventListener("load", () => {
+// Enhanced logging for debugging
+console.log("Content script initialized and ready to receive messages.");
+
+// Top-level error handler for unexpected issues
+try {
+  console.log("Content script loaded and ready.");
+
+  // Existing message listener
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log("Content script: Received message", request);
+
+    if (request.action === "extractPageContent") {
+      console.log("Content script: Starting extraction process.");
+
+      // Wait for DOM ready
+      if (document.readyState !== "complete") {
+        console.log("Content script: DOM not ready, waiting for load event.");
+        window.addEventListener("load", () => {
+          try {
+            console.log("Content script: DOM loaded, extracting content.");
+            const data = extractPageContent();
+            console.log("Content script: Scraped data after load", data);
+            sendResponse({ data });
+          } catch (err) {
+            console.error("Content script: Scraping error after load", err);
+            sendResponse({ error: "Scraping error: " + err.message });
+          }
+        }, { once: true });
+        return true;
+      } else {
         try {
+          console.log("Content script: DOM already loaded, extracting content.");
           const data = extractPageContent();
+          console.log("Content script: Scraped data", data);
           sendResponse({ data });
         } catch (err) {
+          console.error("Content script: Scraping error", err);
           sendResponse({ error: "Scraping error: " + err.message });
         }
-      });
-      return true;
-    } else {
-      try {
-        const data = extractPageContent();
-        sendResponse({ data });
-      } catch (err) {
-        sendResponse({ error: "Scraping error: " + err.message });
+        return true;
       }
-      return true;
     }
-  }
-
-  if (request.action === "getDomMap") {
-    waitForDomReady().then(() => {
-      try {
-        const domMap = generateDOMMap();
-        sendResponse({ dom_map: domMap });
-      } catch (err) {
-        sendResponse({ error: "DOM map error: " + err.message });
-      }
-    });
-    return true;
-  }
-
-  if (request.action === "executeActionPlan") {
-    try {
-      const results = executeActionPlan(request.actions || []);
-      sendResponse({ results });
-    } catch (err) {
-      sendResponse({ error: "Execution error: " + err.message });
-    }
-    return true;
-  }
-});
+  });
+} catch (err) {
+  console.error("Content script: Top-level error", err);
+}

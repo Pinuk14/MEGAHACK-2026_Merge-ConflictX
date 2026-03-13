@@ -42,8 +42,9 @@ function runAnalyze() {
   setAnalysisError("");
   setAnalysisSummary("");
   setAnalysisStatus("Analyzing...");
-
+  console.log("Sending scrapeAndAnalyze message");
   chrome.runtime.sendMessage({ action: "scrapeAndAnalyze" }, (response) => {
+    console.log("Received response from scrapeAndAnalyze", response);
     setAnalysisStatus("");
     if (response?.summary) {
       setAnalysisSummary(response.summary);
@@ -100,8 +101,16 @@ autoAnalyzeToggle.addEventListener("change", (event) => {
   });
 });
 
-chrome.storage.local.get(["autoAnalyzeEnabled"], (result) => {
-  if (typeof result.autoAnalyzeEnabled === "boolean") {
-    autoAnalyzeToggle.checked = result.autoAnalyzeEnabled;
-  }
-});
+// Debug log to verify chrome.storage.local availability
+console.log("Checking chrome.storage.local availability...");
+if (chrome.storage && chrome.storage.local) {
+  console.log("chrome.storage.local is available.");
+  chrome.storage.local.get(["autoAnalyzeEnabled"], (result) => {
+    console.log("chrome.storage.local.get result:", result);
+    if (typeof result.autoAnalyzeEnabled === "boolean") {
+      autoAnalyzeToggle.checked = result.autoAnalyzeEnabled;
+    }
+  });
+} else {
+  console.error("chrome.storage.local is not available.");
+}
