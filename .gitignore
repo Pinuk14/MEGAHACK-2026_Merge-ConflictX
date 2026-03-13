@@ -193,3 +193,5 @@ reports/
 *.pdf
 *.docx
 *.csv
+
+infrastructure/

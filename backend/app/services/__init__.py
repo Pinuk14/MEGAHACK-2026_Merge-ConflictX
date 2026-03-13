@@ -18,6 +18,10 @@ from .summarization_service import (
     SummarizationConfig,
     SummarizationService,
 )
+from .llm_service import (
+    LLMConfig,
+    LLMService,
+)
 
 __all__ = [
     "SemanticSegmentationConfig",
@@ -30,4 +34,6 @@ __all__ = [
     "TopicClassificationService",
     "SummarizationConfig",
     "SummarizationService",
+    "LLMConfig",
+    "LLMService",
 ]

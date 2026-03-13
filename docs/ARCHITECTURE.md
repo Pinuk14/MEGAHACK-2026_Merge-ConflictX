@@ -4,6 +4,15 @@
 
 MEGAHACK-2026_Merge-ConflictX is a modular platform for multimodal document analysis, legal AI, and data processing. It integrates backend services, frontend interfaces, machine learning pipelines, and infrastructure for scalable document ingestion, cleaning, feature extraction, vector-based retrieval, validation, and export.
 
+The platform now supports two connected backend analysis layers:
+
+1. **Data Pipeline (Parse/Clean/Chunk/Embed/Index)**
+2. **Insight Pipeline (Semantic Segmentation/Clause Detection/Stakeholder Extraction/Topic Classification/Summarization)**
+
+Combined end-to-end flow:
+
+`raw_documents -> cleaned_documents -> embeddings + FAISS -> insight extraction -> outputs -> API -> frontend`
+
 ---
 
 ## Directory Map
@@ -30,11 +39,14 @@ README.md          # Project overview and instructions
 - **Responsibility:** Backend services, APIs, models, preprocessing, validation, vector store, orchestration.
 - **Key Files/Folders:**
   - `api/` (API routes/controllers)
+  - `app/schema/` (Structured document insight schemas)
+  - `app/services/` (Insight services: segmentation, clause detection, stakeholders, topics, summarization)
+  - `app/pipelines/` (Insight orchestration + output persistence)
   - `models/` (ML models, embeddings, classifiers)
   - `preprocessing/` (Data cleaning, chunking, feature extraction)
   - `vector_store/` (Vector retrieval, FAISS integration)
   - `validation/` (Strict validation, error reporting)
-  - `services/` (Business logic, summarization, classification)
+  - `services/` (Existing/legacy backend business logic)
   - `utils/` (Shared utilities)
   - `schemas/` (Output schemas)
   - `pipelines/` (Orchestration logic)
@@ -42,6 +54,7 @@ README.md          # Project overview and instructions
 - **Interactions:**
   - API routes call services and models
   - Preprocessing modules feed data to models and vector store
+  - Insight pipeline consumes cleaned/merged records and emits structured JSON insights
   - Validation modules check outputs and generate reports
   - Vector store enables retrieval for chatbot and search
 
@@ -109,9 +122,18 @@ README.md          # Project overview and instructions
 
 1. User interacts with frontend or extension
 2. Frontend sends request to backend API (`backend/api/`)
-3. API routes invoke services, models, preprocessing, and vector store
+3. API routes invoke services, pipelines, models, preprocessing, and vector store
 4. Validation modules check results
 5. Response sent back to frontend for visualization/export
+
+#### Insight Request Flow (`POST /analyze`)
+
+1. Client submits document text to `POST /analyze`
+2. API route optionally verifies/normalizes extracted text with Ollama (`LLMService.verify_extracted_text`) one document at a time
+3. Semantic segmentation runs on verified text
+4. Clause detection, stakeholder extraction, and topic classification run on segments
+5. Summarization creates executive summary
+6. Structured `DocumentInsight` is returned (and optionally persisted to `infrastructure/storage/outputs/insights`)
 
 ### Job Processing/Data Flow
 
@@ -122,9 +144,24 @@ README.md          # Project overview and instructions
 - Models and services perform analysis, classification, summarization
 - Validation and error reporting modules generate reports
 
+#### Insight Pipeline Flow (Step 1-8)
+
+1. Load merged cleaned records from `infrastructure/storage/cleaned_documents/merged_multimodal.json`
+2. For each document, optionally verify/normalize extracted text with Ollama
+3. Semantic segmentation
+4. Clause detection
+5. Stakeholder extraction
+6. Topic classification
+7. Summarization
+8. Orchestrate into `DocumentInsight` / `InsightBatch` and persist outputs under `infrastructure/storage/outputs/insights`
+
 #### Parse → Clean → Chunk → Embed → Index
 
 1. **Parse**: Raw documents are parsed by modality-specific cleaners (PDF, TXT, XML, WAV).
+
+- PDF parsing now includes **OCR fallback** for scanned/non-selectable PDFs via `backend/cleaning/ocr_module.py` + EasyOCR.
+- OCR fallback can be toggled at runtime with `PipelineConfig.use_pdf_ocr_fallback` or CLI flag `--disable-pdf-ocr`.
+
 2. **Clean**: Normalized, de-noised content is persisted in infrastructure/storage/cleaned_documents.
 3. **Chunk**: Text is segmented into overlapping chunks for downstream feature extraction.
 4. **Embed**: Dense embeddings are generated using sentence-transformers (see backend/models/embedding_features.py).
@@ -136,7 +173,9 @@ README.md          # Project overview and instructions
 
 - `main.py` (Backend entry point)
 - `backend/api/main.py` (API server)
+- `backend/api/routes/analysis.py` (`POST /analyze` insight endpoint)
 - `backend/pipelines/orchestration.py` (Final pipeline runner)
+- `backend/app/pipelines/insight_pipeline.py` (Insight pipeline runner)
 - `frontend/src/index.jsx` (Frontend entry)
 - `scripts/ingest_data.sh`, `scripts/run_pipeline.sh` (CLI batch jobs)
 - `docker/docker-compose.yml` (Container orchestration)
@@ -146,14 +185,31 @@ README.md          # Project overview and instructions
 ## Major Services, Utilities, and Shared Libraries
 
 - `backend/services/` (Summarization, topic classification, clause detection)
+- `backend/app/schema/document_insight_schema.py`
+  - **Document Insight Schema**: Pydantic contracts for `DocumentInsight`, `ClauseInsight`, `StakeholderImpact`, `TopicScore`, `ExecutiveSummary`, `InsightBatch`.
+- `backend/app/services/`
+  - **SemanticSegmentationService**: Splits document into semantic segments.
+  - **ClauseDetectionService**: Detects policy/legal clauses from segments.
+  - **StakeholderExtractionService**: Extracts stakeholder impact statements.
+  - **TopicClassificationService**: Produces ranked topical labels.
+  - **SummarizationService**: Builds executive summary, key points, recommendations.
+  - **LLMService (Ollama)**: Verifies extracted text one-by-one before downstream analysis and enriches insight quality when enabled.
+- `backend/app/pipelines/insight_pipeline.py`
+  - **Insight Pipeline**: Orchestrates all insight services and generates per-document structured insights.
+- `backend/app/pipelines/output_storage.py`
+  - **Output Persistence**: Saves insight batch and per-document JSON outputs in `outputs/insights`.
 - `backend/utils/` (File handling, logging, model loading)
 - `backend/models/` (Embeddings, classifiers, NER, segmentation)
+- `backend/cleaning/ocr_module.py`
+  - **OCR Module**: EasyOCR-based extraction for scanned PDF pages when native text extraction is insufficient.
 - `backend/vector_store/` (FAISS integration, retrieval)
   - **FAISS Integration**: Handles creation, saving, loading, and querying of a FAISS index for efficient similarity search. The `FaissIndex` class provides methods for adding embeddings, searching, and managing the index.
 - `backend/pipelines/orchestration.py`
   - **Final Pipeline**: Supports both local test-folder data and production upload-manifest data.
 - `backend/api/routes/ingestion.py`
   - **Upload Endpoint**: `POST /ingestion/upload-texts` stores uploaded files and writes `infrastructure/storage/uploads/uploaded_documents.json` for production pipeline mode.
+- `backend/api/routes/analysis.py`
+  - **Analyze Endpoint**: `POST /analyze` returns structured semantic insights and can persist them in outputs.
 
 ---
 
@@ -181,10 +237,13 @@ README.md          # Project overview and instructions
   - Python: snake_case for files, functions, variables; PascalCase for classes
   - JS/React: camelCase for functions/variables, PascalCase for components
 - **Schema Definitions:** Use `backend/schemas/` for structured outputs
+- **Insight Schema Definitions:** Use `backend/app/schema/` for document insight outputs
 - **Model Code:** Place in `backend/models/`
 - **Preprocessing:** Use `backend/preprocessing/` for data cleaning, chunking, feature extraction
 - **Validation:** Use `backend/validation/` for error reporting and strict checks
 - **Vector Store:** Use `backend/vector_store/` for retrieval and storage logic
+- **Insight Services:** Use `backend/app/services/` for segmentation, clause detection, stakeholders, topics, summarization
+- **Insight Orchestration:** Use `backend/app/pipelines/` for insight pipeline coordination and output persistence
 - **Frontend Integration:** Use `frontend/src/services/api.js` for API calls
 
 ---

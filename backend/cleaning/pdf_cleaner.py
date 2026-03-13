@@ -1,9 +1,12 @@
 from pathlib import Path
 import re
 import json
-from typing import Tuple
+from typing import Optional, Tuple
 
 import pdfplumber
+import pypdfium2 as pdfium
+
+from backend.cleaning.ocr_module import OCRModule
 
 # ---------------------------------
 # TEXT CLEANING HELPERS
@@ -46,35 +49,69 @@ def clean_text(text: str) -> str:
 # PDF TEXT EXTRACTION
 # ---------------------------------
 
-def extract_text_from_pdf(pdf_path: Path) -> Tuple[str, int]:
+def extract_text_from_pdf(pdf_path: Path, use_ocr_fallback: bool = True) -> Tuple[str, int, int]:
     """
-    Extract text and page count from PDF
+    Extract text and page count from PDF.
+
+    Uses native PDF text extraction first and falls back to OCR for pages
+    that contain little or no extractable text.
     """
     all_text = []
     page_count = 0
+    ocr_pages_used = 0
+    ocr_reader: Optional[OCRModule] = OCRModule(languages=["en"], confidence_threshold=0.5) if use_ocr_fallback else None
 
     with pdfplumber.open(pdf_path) as pdf:
         page_count = len(pdf.pages)
-        for page in pdf.pages:
+        for page_index, page in enumerate(pdf.pages):
             text = page.extract_text()
-            if text:
+            if text and len(text.strip()) >= 40:
                 all_text.append(text)
+                continue
+
+            if not use_ocr_fallback:
+                continue
+
+            ocr_text = _extract_page_text_with_ocr(pdf_path, page_index, ocr_reader)
+            if ocr_text:
+                all_text.append(ocr_text)
+                ocr_pages_used += 1
 
     combined_text = "\n".join(all_text)
-    return combined_text, page_count
+    return combined_text, page_count, ocr_pages_used
+
+
+def _extract_page_text_with_ocr(pdf_path: Path, page_index: int, ocr_reader: Optional[OCRModule]) -> str:
+    """Render a PDF page to image and run OCR. Returns empty text on failure."""
+    try:
+        reader = ocr_reader or OCRModule(languages=["en"], confidence_threshold=0.5)
+        pdf_doc = pdfium.PdfDocument(str(pdf_path))
+
+        if page_index < 0 or page_index >= len(pdf_doc):
+            return ""
+
+        page = pdf_doc[page_index]
+        bitmap = page.render(scale=2.0)
+        image = bitmap.to_numpy()
+        return reader.extract_text_from_array(image)
+    except Exception:
+        return ""
 
 
 # ---------------------------------
 # PIPELINE: PDF → CLEAN JSON
 # ---------------------------------
 
-def clean_pdf_directory(input_dir: str, output_json: str):
+def clean_pdf_directory(input_dir: str, output_json: str, use_ocr_fallback: bool = True):
     records = []
     input_path = Path(input_dir)
 
     for pdf_file in input_path.glob("*.pdf"):
         try:
-            raw_text, page_count = extract_text_from_pdf(pdf_file)
+            raw_text, page_count, ocr_pages_used = extract_text_from_pdf(
+                pdf_file,
+                use_ocr_fallback=use_ocr_fallback,
+            )
             cleaned_text = clean_text(raw_text)
 
             # Quality gate
@@ -87,6 +124,7 @@ def clean_pdf_directory(input_dir: str, output_json: str):
                 "content": cleaned_text,
                 "metadata": {
                     "page_count": page_count,
+                    "ocr_pages_used": ocr_pages_used,
                     "char_count": len(cleaned_text),
                     "file_path": str(pdf_file.resolve())
                 }

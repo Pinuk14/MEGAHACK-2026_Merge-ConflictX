@@ -55,6 +55,7 @@ class PipelineConfig:
     skip_tfidf: bool = False
     skip_embeddings: bool = False
     skip_vector_store: bool = False  # enabled now that FAISS adapter is available
+    use_pdf_ocr_fallback: bool = True
 
     chunk_size: int = 200  # Reduced chunk size for smaller documents
     chunk_overlap: int = 20  # Reduced overlap for better chunking
@@ -150,7 +151,11 @@ class PostCleaningPipeline:
             pdf_dir = self.raw_dir / "pdfs"
             pdf_output = self.processed_dir / "cleaned_pdfs.json"
             if pdf_dir.exists() and any(pdf_dir.glob("*.pdf")):
-                clean_pdf_directory(str(pdf_dir), str(pdf_output))
+                clean_pdf_directory(
+                    str(pdf_dir),
+                    str(pdf_output),
+                    use_ocr_fallback=self.config.use_pdf_ocr_fallback,
+                )
                 if pdf_output.exists():
                     with open(pdf_output, "r", encoding="utf-8") as f:
                         records = json.load(f)
@@ -344,6 +349,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip-tfidf", action="store_true")
     parser.add_argument("--skip-embeddings", action="store_true")
     parser.add_argument("--skip-vector-store", action="store_true")
+    parser.add_argument("--disable-pdf-ocr", action="store_true")
 
     args = parser.parse_args()
 
@@ -354,6 +360,7 @@ if __name__ == "__main__":
         skip_tfidf=args.skip_tfidf,
         skip_embeddings=args.skip_embeddings,
         skip_vector_store=args.skip_vector_store,
+        use_pdf_ocr_fallback=not args.disable_pdf_ocr,
     )
 
     pipeline = PostCleaningPipeline(config=config)
