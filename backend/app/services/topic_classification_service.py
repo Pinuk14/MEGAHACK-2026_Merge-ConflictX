@@ -71,6 +71,38 @@ class TopicClassificationConfig:
                 "milestone",
                 "implementation",
             ],
+            "sensor_systems_iot": [
+                "sensor",
+                "iot",
+                "measurement",
+                "telemetry",
+                "calibration",
+                "embedded",
+                "microcontroller",
+                "signal",
+            ],
+            "machine_learning_ai": [
+                "machine learning",
+                "neural",
+                "classifier",
+                "model",
+                "training",
+                "inference",
+                "feature",
+                "dataset",
+                "accuracy",
+            ],
+            "scientific_research": [
+                "abstract",
+                "method",
+                "results",
+                "experiment",
+                "observation",
+                "analysis",
+                "paper",
+                "study",
+                "publication",
+            ],
         }
     )
 

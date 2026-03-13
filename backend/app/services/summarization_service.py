@@ -95,7 +95,7 @@ class SummarizationService:
 
         if topics:
             top = ", ".join(f"{t.label} ({round(t.confidence * 100)}%)" for t in topics[:3])
-            points.append(f"Primary policy themes: {top}.")
+            points.append(f"Primary document themes: {top}.")
 
         top_clauses = sorted(clauses, key=lambda c: c.confidence, reverse=True)[:3]
         for c in top_clauses:

@@ -18,6 +18,7 @@ from typing import Dict, Any, List, Optional
 import json
 import logging
 import sys
+import time
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -63,13 +64,15 @@ class FinalPipeline:
 		"""
 		manifest_path = self.project_root / self.config.upload_manifest_path
 		if not manifest_path.exists():
-			raise FileNotFoundError(f"Upload manifest not found: {manifest_path}")
+			logger.warning(f"Upload manifest not found: {manifest_path}")
+			return {"uploaded_records_prepared": 0, "reason": "manifest-missing"}
 
 		with open(manifest_path, "r", encoding="utf-8") as f:
 			records = json.load(f)
 
 		if not isinstance(records, list) or not records:
-			raise ValueError("Upload manifest is empty or invalid.")
+			logger.warning("Upload manifest is empty or invalid.")
+			return {"uploaded_records_prepared": 0, "reason": "manifest-empty-or-invalid"}
 
 		cleaned_txt_path = self.project_root / self.config.pipeline.processed_dir / "cleaned_txts.json"
 		cleaned_txt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -100,20 +103,67 @@ class FinalPipeline:
 			json.dump(normalized, f, indent=2, ensure_ascii=False)
 
 		logger.info(f"Prepared {len(normalized)} uploaded records: {cleaned_txt_path}")
-		return {"uploaded_records_prepared": len(normalized)}
+		return {
+			"uploaded_records_prepared": len(normalized),
+			"cleaned_txt_path": str(cleaned_txt_path),
+		}
+
+	def _has_local_input_files(self) -> bool:
+		"""Return True when there are local raw files to process."""
+		raw_root = self.project_root / self.config.pipeline.raw_dir
+		if not raw_root.exists():
+			return False
+
+		patterns = ("*.txt", "*.pdf", "*.xml", "*.wav")
+		for pattern in patterns:
+			if list(raw_root.rglob(pattern)):
+				return True
+		return False
+
+	def _failure_result(self, errors: List[str], started_at: float) -> PipelineResult:
+		"""Build a non-throwing failed pipeline result."""
+		return PipelineResult(
+			success=False,
+			stages_completed=[],
+			stages_failed=[],
+			output_files={},
+			statistics={},
+			duration_seconds=round(time.time() - started_at, 3),
+			errors=errors,
+		)
 
 	def run(self) -> PipelineResult:
+		started_at = time.time()
 		pipeline_config = self.config.pipeline
 
-		if self.config.use_local_test_folder:
-			logger.info("Using LOCAL TEST FOLDER input mode.")
-		else:
-			logger.info("Using PRODUCTION UPLOAD input mode.")
-			self._prepare_uploaded_documents_for_pipeline()
-			pipeline_config.skip_cleaning = True
+		try:
+			if self.config.use_local_test_folder:
+				logger.info("Using LOCAL TEST FOLDER input mode.")
+				if not self._has_local_input_files():
+					return self._failure_result(
+						[
+							"No local raw input files found under infrastructure/storage/raw_documents.",
+						],
+						started_at,
+					)
+			else:
+				logger.info("Using PRODUCTION UPLOAD input mode.")
+				prep = self._prepare_uploaded_documents_for_pipeline()
+				if prep.get("uploaded_records_prepared", 0) <= 0:
+					reason = prep.get("reason", "unknown")
+					return self._failure_result(
+						[
+							f"No uploaded records prepared for processing (reason: {reason}).",
+						],
+						started_at,
+					)
+				pipeline_config.skip_cleaning = True
 
-		pipeline = PostCleaningPipeline(config=pipeline_config, project_root=self.project_root)
-		return pipeline.run()
+			pipeline = PostCleaningPipeline(config=pipeline_config, project_root=self.project_root)
+			return pipeline.run()
+		except Exception as exc:
+			logger.exception("FinalPipeline crashed")
+			return self._failure_result([f"Final pipeline error: {exc}"], started_at)
 
 
 if __name__ == "__main__":

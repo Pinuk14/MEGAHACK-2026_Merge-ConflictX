@@ -15,4 +15,5 @@ dependencies = [
     "faiss-cpu>=1.8.0",
     "soundfile>=0.13.1",
     "pydantic>=2.12.5",
+    "psutil>=6.0.0",
 ]

@@ -25,7 +25,7 @@ class StakeholderExtractionService:
 
     _ROLE_PATTERNS: Dict[StakeholderRole, List[re.Pattern[str]]] = {
         StakeholderRole.GOVERNMENT: [
-            re.compile(r"\b(government|ministry|department|public authority|state)\b", re.I),
+            re.compile(r"\b(government|ministry|department|public authority|state government|member state)\b", re.I),
         ],
         StakeholderRole.REGULATOR: [
             re.compile(r"\b(regulator|regulatory authority|commission|oversight body)\b", re.I),
