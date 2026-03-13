@@ -1,0 +1,22 @@
+{
+  "document_id": "2",
+  "source_filename": "large_dummy_document",
+  "generated_at": "2026-03-13T10:59:04.315736Z",
+  "executive_summary": {
+    "short_summary": "vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; morbi lacinia molestie dui. it contains multiple paragraphs of text to simulate a real-world document with sufficient content for chunking. sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis.",
+    "key_points": [
+      "Primary policy themes: general_policy (50%)."
+    ],
+    "recommended_actions": [
+      "Validate findings with domain experts before policy adoption."
+    ]
+  },
+  "clauses": [],
+  "stakeholders": [],
+  "topics": [
+    {
+      "label": "general_policy",
+      "confidence": 0.5
+    }
+  ]
+}

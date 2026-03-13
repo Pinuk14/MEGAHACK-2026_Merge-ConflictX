@@ -186,7 +186,7 @@ class TextChunker:
             List of Chunk objects
         """
         if not text:
-            logger.warning(f"Document '{record.get('title', 'Untitled')}' has no content to chunk.")
+            logger.warning(f"Document '{document_title or 'Untitled'}' has no content to chunk.")
             return []
 
         if len(text) < self.config.min_chunk_size:

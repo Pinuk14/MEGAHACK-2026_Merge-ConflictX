@@ -122,12 +122,21 @@ README.md          # Project overview and instructions
 - Models and services perform analysis, classification, summarization
 - Validation and error reporting modules generate reports
 
+#### Parse → Clean → Chunk → Embed → Index
+
+1. **Parse**: Raw documents are parsed by modality-specific cleaners (PDF, TXT, XML, WAV).
+2. **Clean**: Normalized, de-noised content is persisted in infrastructure/storage/cleaned_documents.
+3. **Chunk**: Text is segmented into overlapping chunks for downstream feature extraction.
+4. **Embed**: Dense embeddings are generated using sentence-transformers (see backend/models/embedding_features.py).
+5. **Index**: FAISS index is built and stored for similarity search (see backend/vector_store/faiss_integration.py).
+
 ---
 
 ## Entry Points
 
 - `main.py` (Backend entry point)
 - `backend/api/main.py` (API server)
+- `backend/pipelines/orchestration.py` (Final pipeline runner)
 - `frontend/src/index.jsx` (Frontend entry)
 - `scripts/ingest_data.sh`, `scripts/run_pipeline.sh` (CLI batch jobs)
 - `docker/docker-compose.yml` (Container orchestration)
@@ -140,6 +149,11 @@ README.md          # Project overview and instructions
 - `backend/utils/` (File handling, logging, model loading)
 - `backend/models/` (Embeddings, classifiers, NER, segmentation)
 - `backend/vector_store/` (FAISS integration, retrieval)
+  - **FAISS Integration**: Handles creation, saving, loading, and querying of a FAISS index for efficient similarity search. The `FaissIndex` class provides methods for adding embeddings, searching, and managing the index.
+- `backend/pipelines/orchestration.py`
+  - **Final Pipeline**: Supports both local test-folder data and production upload-manifest data.
+- `backend/api/routes/ingestion.py`
+  - **Upload Endpoint**: `POST /ingestion/upload-texts` stores uploaded files and writes `infrastructure/storage/uploads/uploaded_documents.json` for production pipeline mode.
 
 ---
 

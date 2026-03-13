@@ -54,7 +54,7 @@ class PipelineConfig:
     skip_chunking: bool = False
     skip_tfidf: bool = False
     skip_embeddings: bool = False
-    skip_vector_store: bool = True  # default True until FAISS adapter is ready
+    skip_vector_store: bool = False  # enabled now that FAISS adapter is available
 
     chunk_size: int = 200  # Reduced chunk size for smaller documents
     chunk_overlap: int = 20  # Reduced overlap for better chunking
@@ -276,6 +276,7 @@ class PostCleaningPipeline:
         try:
             from backend.vector_store.faiss_integration import build_vector_store_from_embeddings
         except Exception as e:
+            logger.error(f"Vector store adapter import failed: {e}")
             raise ImportError("Vector store adapter not available") from e
 
         store = build_vector_store_from_embeddings(

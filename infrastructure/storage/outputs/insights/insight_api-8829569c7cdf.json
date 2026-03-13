@@ -1,0 +1,95 @@
+{
+  "document_id": "api-8829569c7cdf",
+  "source_filename": null,
+  "generated_at": "2026-03-13T11:00:02.138793Z",
+  "executive_summary": {
+    "short_summary": "The Ministry shall publish compliance rules within 60 days. All operators must submit quarterly reports. Citizens should receive transparent notices about data use.",
+    "key_points": [
+      "Primary policy themes: governance_policy (38%), compliance_enforcement (21%), data_privacy_security (21%).",
+      "Compliance clause identified: The Ministry shall publish compliance rules within 60 days.",
+      "Obligation clause identified: All operators must submit quarterly reports.",
+      "Ministry is high-impact with role government.",
+      "Citizens is medium-impact with role public."
+    ],
+    "recommended_actions": [
+      "Create a compliance checklist mapped to all obligation and compliance clauses.",
+      "Run targeted stakeholder consultations with: Ministry."
+    ]
+  },
+  "clauses": [
+    {
+      "clause_id": "clause-0001",
+      "clause_type": "compliance",
+      "text": "The Ministry shall publish compliance rules within 60 days.",
+      "rationale": "References compliance monitoring, enforcement, or violations.",
+      "page_number": null,
+      "segment_id": "api-8829569c7cdf-seg-001",
+      "confidence": 0.724
+    },
+    {
+      "clause_id": "clause-0002",
+      "clause_type": "obligation",
+      "text": "All operators must submit quarterly reports.",
+      "rationale": "Contains mandatory language indicating required action.",
+      "page_number": null,
+      "segment_id": "api-8829569c7cdf-seg-001",
+      "confidence": 0.71
+    }
+  ],
+  "stakeholders": [
+    {
+      "stakeholder_name": "Ministry",
+      "role": "government",
+      "impact_level": "high",
+      "impact_summary": "Ministry (government) is affected as follows: The Ministry shall publish compliance rules within 60 days.",
+      "evidence": [
+        "The Ministry shall publish compliance rules within 60 days."
+      ],
+      "segment_ids": [
+        "api-8829569c7cdf-seg-001"
+      ]
+    },
+    {
+      "stakeholder_name": "Citizens",
+      "role": "public",
+      "impact_level": "medium",
+      "impact_summary": "Citizens (public) is affected as follows: Citizens should receive transparent notices about data use.",
+      "evidence": [
+        "Citizens should receive transparent notices about data use."
+      ],
+      "segment_ids": [
+        "api-8829569c7cdf-seg-001"
+      ]
+    },
+    {
+      "stakeholder_name": "Regulator",
+      "role": "regulator",
+      "impact_level": "low",
+      "impact_summary": "Regulator (regulator) is affected as follows: The regulator will conduct annual audits.",
+      "evidence": [
+        "The regulator will conduct annual audits."
+      ],
+      "segment_ids": [
+        "api-8829569c7cdf-seg-001"
+      ]
+    }
+  ],
+  "topics": [
+    {
+      "label": "governance_policy",
+      "confidence": 0.3834
+    },
+    {
+      "label": "compliance_enforcement",
+      "confidence": 0.2055
+    },
+    {
+      "label": "data_privacy_security",
+      "confidence": 0.2055
+    },
+    {
+      "label": "implementation_timeline",
+      "confidence": 0.2055
+    }
+  ]
+}

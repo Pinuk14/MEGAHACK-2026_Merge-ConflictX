@@ -1,0 +1,268 @@
+[
+  {
+    "text": "this is a dummy text document created for testing purposes. it contains multiple lines of text to simulate a real document. line 1: the quick brown fox jumps over the lazy dog.",
+    "chunk_index": 0,
+    "start_char": 0,
+    "end_char": 177,
+    "document_id": "1",
+    "document_title": "dummy_document",
+    "source": "txt",
+    "char_count": 176,
+    "metadata": {
+      "char_count": 347,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\dummy_document.txt"
+    }
+  },
+  {
+    "text": "over the lazy dog. line 2: lorem ipsum dolor sit amet, consectetur adipiscing elit. line 3: python is a versatile programming language. line 4: this is the final line of the dummy document.",
+    "chunk_index": 1,
+    "start_char": 157,
+    "end_char": 347,
+    "document_id": "1",
+    "document_title": "dummy_document",
+    "source": "txt",
+    "char_count": 189,
+    "metadata": {
+      "char_count": 347,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\dummy_document.txt"
+    }
+  },
+  {
+    "text": "the dummy document.",
+    "chunk_index": 2,
+    "start_char": 327,
+    "end_char": 347,
+    "document_id": "1",
+    "document_title": "dummy_document",
+    "source": "txt",
+    "char_count": 19,
+    "metadata": {
+      "char_count": 347,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\dummy_document.txt"
+    }
+  },
+  {
+    "text": "this is a large dummy text document created for testing purposes. it contains multiple paragraphs of text to simulate a real-world document with sufficient content for chunking.",
+    "chunk_index": 0,
+    "start_char": 0,
+    "end_char": 178,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 177,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "ntent for chunking. paragraph 1: the quick brown fox jumps over the lazy dog. lorem ipsum dolor sit amet, consectetur adipiscing elit. integer nec odio. praesent libero. sed cursus ante dapibus diam.",
+    "chunk_index": 1,
+    "start_char": 158,
+    "end_char": 358,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 199,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "ante dapibus diam. sed nisi. nulla quis sem at nibh elementum imperdiet. duis sagittis ipsum. praesent mauris. fusce nec tellus sed augue semper porta. mauris massa. paragraph 2: vestibulum lacinia arcu eget nulla.",
+    "chunk_index": 2,
+    "start_char": 338,
+    "end_char": 554,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 214,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "ia arcu eget nulla. class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. curabitur sodales ligula in libero. sed dignissim lacinia nunc. curabitur tortor.",
+    "chunk_index": 3,
+    "start_char": 534,
+    "end_char": 728,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 193,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": ". curabitur tortor. pellentesque nibh. aenean quam. in scelerisque sem at dolor. maecenas mattis. sed convallis tristique sem. proin ut ligula vel nunc egestas porttitor.",
+    "chunk_index": 4,
+    "start_char": 708,
+    "end_char": 879,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 170,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "egestas porttitor. morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. paragraph 3: fusce ac turpis quis ligula lacinia aliquet. mauris ipsum. nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh.",
+    "chunk_index": 5,
+    "start_char": 859,
+    "end_char": 1087,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 226,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": ", euismod in, nibh. quisque volutpat condimentum velit. class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. nam nec ante.",
+    "chunk_index": 6,
+    "start_char": 1067,
+    "end_char": 1229,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 161,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "aeos. nam nec ante. sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis. nulla facilisi. ut fringilla. suspendisse potenti. nunc feugiat mi a tellus consequat imperdiet.",
+    "chunk_index": 7,
+    "start_char": 1209,
+    "end_char": 1429,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 219,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "onsequat imperdiet. vestibulum sapien. proin quam. etiam ultrices. paragraph 4: suspendisse in justo eu magna luctus suscipit. sed lectus. integer euismod lacus luctus magna.",
+    "chunk_index": 8,
+    "start_char": 1409,
+    "end_char": 1584,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 174,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "lacus luctus magna. quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam. vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; morbi lacinia molestie dui.",
+    "chunk_index": 9,
+    "start_char": 1564,
+    "end_char": 1802,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 237,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "cinia molestie dui. praesent blandit dolor. sed non quam. in vel mi sit amet augue congue elementum. morbi in ipsum sit amet pede facilisis laoreet. donec lacus nunc, viverra nec, blandit vel, egestas et, augue.",
+    "chunk_index": 10,
+    "start_char": 1782,
+    "end_char": 1994,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 211,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "egestas et, augue. vestibulum tincidunt malesuada tellus. ut ultrices ultrices enim. curabitur sit amet mauris. paragraph 5: morbi in dui quis est pulvinar ullamcorper. nulla facilisi.",
+    "chunk_index": 11,
+    "start_char": 1974,
+    "end_char": 2160,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 184,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "er. nulla facilisi. integer lacinia sollicitudin massa. cras metus. sed aliquet risus a tortor. integer id quam. morbi mi. quisque nisl felis, venenatis tristique, dignissim in, ultrices sit amet, augue.",
+    "chunk_index": 12,
+    "start_char": 2140,
+    "end_char": 2344,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 203,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "es sit amet, augue. proin sodales libero eget ante. nulla quam. aenean laoreet. vestibulum nisi lectus, commodo ac, facilisis ac, ultricies eu, pede. ut orci risus, accumsan porttitor, cursus quis, aliquet eget, justo.",
+    "chunk_index": 13,
+    "start_char": 2324,
+    "end_char": 2543,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 218,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "liquet eget, justo. sed pretium blandit orci. ut eu diam at pede suscipit sodales.",
+    "chunk_index": 14,
+    "start_char": 2523,
+    "end_char": 2605,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 82,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  },
+  {
+    "text": "de suscipit sodales.",
+    "chunk_index": 15,
+    "start_char": 2585,
+    "end_char": 2605,
+    "document_id": "2",
+    "document_title": "large_dummy_document",
+    "source": "txt",
+    "char_count": 20,
+    "metadata": {
+      "char_count": 2605,
+      "file_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\raw_documents\\txts\\large_dummy_document.txt"
+    }
+  }
+]

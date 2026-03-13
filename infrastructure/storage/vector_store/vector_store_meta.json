@@ -1,0 +1,9 @@
+{
+  "embedding_dim": 384,
+  "num_vectors": 19,
+  "model_name": "all-MiniLM-L6-v2",
+  "normalize": null,
+  "index_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\vector_store\\index.faiss",
+  "doc_ids_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\vector_store\\doc_ids.json",
+  "chunks_path": "D:\\projects\\MEGAHACK-2026_Merge-ConflictX\\infrastructure\\storage\\vector_store\\chunks.json"
+}
