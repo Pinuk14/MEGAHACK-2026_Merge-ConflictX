@@ -1,0 +1,5 @@
+This is a sample document for testing the reusable pipeline modules.
+It contains several sentences and sections.
+The quick brown fox jumps over the lazy dog.
+Policy papers and research articles are often lengthy and complex.
+Extract key insights and actionable points from this text.
